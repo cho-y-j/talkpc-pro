@@ -1,9 +1,11 @@
 """/auth — 가입, 로그인, heartbeat, 디바이스 관리."""
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
 from sqlalchemy.orm import Session  # noqa
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from config import settings
 from db import get_db
@@ -19,6 +21,9 @@ from security import (
 from email_service import email_signup_welcome
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+# slowapi 가 시작 시 cwd 의 .env 를 starlette.Config 로 읽으려다 cp949 충돌 →
+# config_filename=None 으로 우회 (환경변수는 OS env 에서 직접 읽음).
+limiter = Limiter(key_func=get_remote_address, config_filename=None)
 
 
 # ── 요청/응답 스키마 ──
@@ -76,7 +81,8 @@ def _build_auth_response(user: User, with_token: bool) -> AuthResponse:
 # ── 엔드포인트 ──
 
 @router.post("/signup", response_model=AuthResponse)
-def signup(req: SignupRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/hour")
+def signup(request: Request, req: SignupRequest, db: Session = Depends(get_db)):
     """셀프 가입 — 상태는 pending. 어드민 승인 후 로그인 가능."""
     if db.scalar(select(User).where(User.email == req.email)):
         raise HTTPException(status.HTTP_409_CONFLICT, "이미 가입된 이메일")
@@ -96,7 +102,8 @@ def signup(req: SignupRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=AuthResponse)
-def login(req: LoginRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def login(request: Request, req: LoginRequest, db: Session = Depends(get_db)):
     user = db.scalar(select(User).where(User.email == req.email))
     if not user or not verify_password(req.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "이메일/비밀번호 불일치")
