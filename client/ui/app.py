@@ -112,6 +112,58 @@ class App(ctk.CTk):
     def _auto_init(self):
         if "dashboard" in self.pages:
             self.pages["dashboard"].auto_initialize()
+        # 주소록 비어있으면 카톡 친구 자동 수집 안내
+        self.after(2000, self._offer_kakao_seed)
+
+    def _offer_kakao_seed(self):
+        """주소록 비어있을 때 카톡에서 자동 수집할지 안내 모달."""
+        if not self.orchestrator:
+            return
+        # 카톡 켜져 있는지 + 주소록 비어있는지 체크
+        try:
+            contacts = self.orchestrator.contact_mgr.get_all()
+        except Exception:
+            return
+        if len(contacts) > 0:
+            return  # 이미 데이터 있음 — 안내 안 함
+
+        # 이미 한 번 거절했으면 안 띄움 (세션 플래그)
+        if getattr(self, "_seed_offered", False):
+            return
+        self._seed_offered = True
+
+        from tkinter import messagebox
+        ok = messagebox.askyesno(
+            "주소록 자동 수집",
+            "주소록이 비어 있습니다.\n\n"
+            "카카오톡 친구탭에서 자동으로 친구 목록을 수집하시겠습니까?\n\n"
+            "• 카카오톡 PC 가 실행 + 친구탭이 보이는 상태여야 합니다.\n"
+            "• 수집 중에는 마우스/키보드를 사용하지 마세요.\n"
+            "• 카톡 자동 발송에서 발견된 생일자는 별도로 빈 생일을 채워줍니다.\n\n"
+            "지금 시작할까요?",
+            parent=self,
+        )
+        if not ok:
+            return
+
+        import threading
+        def runner():
+            try:
+                self.orchestrator.seed_contacts_from_kakao()
+                # 완료 후 UI 갱신
+                self.after(0, lambda: self.pages["contacts"].refresh_list()
+                             if "contacts" in self.pages else None)
+                self.after(0, lambda: messagebox.showinfo(
+                    "수집 완료",
+                    "친구 목록 수집이 완료되었습니다.\n"
+                    "연락처 페이지에서 확인하세요.",
+                    parent=self,
+                ))
+            except Exception as e:
+                self.after(0, lambda: messagebox.showerror(
+                    "수집 실패", str(e), parent=self,
+                ))
+        threading.Thread(target=runner, daemon=True).start()
 
     def _on_close(self):
         if self.orchestrator:

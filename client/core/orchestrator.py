@@ -803,6 +803,44 @@ class Orchestrator:
             self._kakao_friends = KakaoFriends(win32, ocr, self.screen_capture)
         return self._kakao_friends
 
+    def seed_contacts_from_kakao(self, max_count: int = 1000,
+                                    on_progress=None,
+                                    should_stop=None) -> dict:
+        """카톡 친구탭 OCR 으로 전체 친구 자동 수집 → 연락처 DB 시드.
+
+        주로 첫 실행 시 (주소록 비어있을 때) 호출.
+        기존 친구는 중복 추가 안 함 (이름 일치 = duplicate).
+
+        Returns: {ok, added, duplicates, ocr_failed, names, reason}
+        """
+        self._emit_log("=" * 40)
+        self._emit_log("📥 카톡 친구 자동 수집 시작 (주소록 시드)")
+        try:
+            result = self.kakao_friends.collect_friends_to_addressbook(
+                contact_manager=self.contact_mgr,
+                category="kakao_friend",
+                dry_run=False,  # 실제 저장
+                max_count=max_count,
+                on_progress=on_progress,
+                should_stop=should_stop,
+            )
+            if result.get("ok"):
+                self._emit_log(
+                    f"✅ 친구 수집 완료: {result['added']}명 추가, "
+                    f"{result['duplicates']}명 중복, "
+                    f"{result['ocr_failed']}명 OCR 실패",
+                    "info",
+                )
+            else:
+                self._emit_log(
+                    f"❌ 친구 수집 실패: {result.get('reason')}", "error"
+                )
+            return result
+        except Exception as e:
+            self._emit_log(f"친구 수집 예외: {e}", "error")
+            return {"ok": False, "reason": str(e), "added": 0,
+                    "duplicates": 0, "ocr_failed": 0, "names": []}
+
     def _sync_birthday_to_contacts(self, targets: list[dict],
                                      today_mmdd: str,
                                      create_new: bool = False) -> dict:
