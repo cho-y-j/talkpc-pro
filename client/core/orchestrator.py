@@ -842,27 +842,37 @@ class Orchestrator:
                     "duplicates": 0, "ocr_failed": 0, "names": []}
 
     def _sync_birthday_to_contacts(self, targets: list[dict],
-                                     today_mmdd: str,
                                      create_new: bool = False) -> dict:
-        """카톡 OCR 으로 발견된 '오늘 생일자' 를 연락처 DB 에 반영.
+        """카톡 OCR 으로 발견된 '어제/오늘/내일 생일자' 를 연락처 DB 에 반영.
+
+        발송은 오늘만(send_birthday_messages 내부 로직)이지만 DB 채움은 ±1일
+        모두 처리 → 매일 실행 시 3일치 동시 수집 (약 120일이면 1년치 채워짐).
 
         매칭 정책:
         - 이름 정확 일치 (공백 무시)
-        - 빈 birthday → today_mmdd 로 채움
+        - 빈 birthday → 해당 일자 MM-DD 채움
         - 이미 birthday 있으면 변경 없음
         - 미매칭: create_new=True 면 새 연락처 생성, False 면 스킵
 
         Returns: {updated, created, skipped_already_set, skipped_no_match}
         """
-        today_targets = [t for t in targets
-                          if t.get("day") == "today"
-                          and t.get("action") in ("sent", "dry_run_sent",
-                                                    "would_send")]
+        from datetime import datetime, timedelta
+        now = datetime.now()
+        DAY_MMDD = {
+            "today": now.strftime("%m-%d"),
+            "yesterday": (now - timedelta(days=1)).strftime("%m-%d"),
+            "tomorrow": (now + timedelta(days=1)).strftime("%m-%d"),
+        }
+
         contacts = self.contact_mgr.get_all()
         by_name = {c.name.replace(" ", ""): c for c in contacts}
 
         updated = created = skipped_set = skipped_no_match = 0
-        for t in today_targets:
+        for t in targets:
+            day = t.get("day")
+            mmdd = DAY_MMDD.get(day)
+            if not mmdd:
+                continue  # 알 수 없는 day 라벨은 스킵
             name_raw = (t.get("name") or "").strip()
             if not name_raw:
                 continue
@@ -870,7 +880,7 @@ class Orchestrator:
             existing = by_name.get(key)
             if existing:
                 if not existing.birthday:
-                    existing.birthday = today_mmdd
+                    existing.birthday = mmdd
                     if not existing.memo:
                         existing.memo = "카톡에서 생일 자동 수집"
                     updated += 1
@@ -880,7 +890,7 @@ class Orchestrator:
                 from core.contact_manager import Contact
                 c = Contact(
                     name=name_raw, category="kakao_friend",
-                    birthday=today_mmdd,
+                    birthday=mmdd,
                     memo="카톡 생일자 자동 추가",
                 )
                 self.contact_mgr.contacts.append(c)
@@ -960,14 +970,13 @@ class Orchestrator:
             self._emit_log(f"❌ 실패: {result['reason']}", "error")
             self._emit_state(OrchestratorState.ERROR)
 
-        # 카톡 OCR 으로 발견한 오늘 생일자 → 연락처 DB 자동 반영
+        # 카톡 OCR 으로 발견한 ±1일 생일자 → 연락처 DB 자동 반영
+        # (발송은 오늘만 — send_birthday_messages 내부 로직)
         try:
             sync_cfg = self.config.get("auto_sync_birthday", {})
             if sync_cfg.get("enabled", True):
-                from datetime import datetime
                 sync = self._sync_birthday_to_contacts(
                     result.get("targets", []),
-                    today_mmdd=datetime.now().strftime("%m-%d"),
                     create_new=sync_cfg.get("create_new", False),
                 )
                 parts = []
