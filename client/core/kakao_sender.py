@@ -557,7 +557,9 @@ class KakaoSender:
                     self._safe_press("enter")
         finally:
             self.win32.click_mode = old_mode
-        time.sleep(1.0)
+        # 이미지 업로드 + 카톡 서버 전송 + UI 갱신 대기. 짧으면 다음 액션
+        # (go_back 등) 이 업로드 중에 발생해 채팅창 닫기 실패 / 이미지 손실 위험.
+        time.sleep(3.0)
 
     def go_back(self):
         """채팅방 나가기 → 홈 화면으로 복귀"""

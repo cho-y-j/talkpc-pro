@@ -1,0 +1,74 @@
+{
+  "app": {
+    "name": "KakaoTalk Auto Messenger",
+    "version": "1.0.0"
+  },
+  "kakao_window": {
+    "width": 420,
+    "height": 700,
+    "margin_right": 20,
+    "margin_top": 40
+  },
+  "sending": {
+    "delay_min": 5,
+    "delay_max": 15,
+    "retry_count": 1,
+    "retry_delay": 5
+  },
+  "ocr": {
+    "language": "kor+eng",
+    "confidence_threshold": 70
+  },
+  "categories": [
+    {
+      "id": "friend",
+      "name": "친구",
+      "color": "#00d2d3"
+    },
+    {
+      "id": "family",
+      "name": "가족",
+      "color": "#ff6b6b"
+    },
+    {
+      "id": "business",
+      "name": "사업체",
+      "color": "#feca57"
+    },
+    {
+      "id": "vip",
+      "name": "VIP",
+      "color": "#a29bfe"
+    },
+    {
+      "id": "other",
+      "name": "기타",
+      "color": "#636e72"
+    }
+  ],
+  "anti_detect": {
+    "action_delay_min": 0.3,
+    "action_delay_max": 1.0,
+    "rest_every": 15,
+    "rest_min": 180,
+    "rest_max": 420,
+    "daily_limit": 150,
+    "click_mode": "postmessage",
+    "warning_threshold": 3,
+    "warning_cooldown": 60
+  },
+  "sejong": {
+    "db": {
+      "host": "localhost",
+      "port": 3306,
+      "name": "sms",
+      "user": "",
+      "password": ""
+    },
+    "kakao": {
+      "sender_key": "",
+      "callback": "",
+      "template_code": ""
+    }
+  }
+}
