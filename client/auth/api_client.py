@@ -1,7 +1,4 @@
-"""서버 API 클라이언트 — httpx 동기 호출.
-
-서버 URL 은 환경변수 TALKPC_API_BASE 또는 기본 production URL.
-"""
+"""서버 API 클라이언트 — httpx 동기 호출."""
 import os
 from typing import Optional
 
@@ -50,23 +47,27 @@ class ApiClient:
     # ── 인증 ──
 
     def signup(self, email: str, password: str) -> dict:
+        """가입 — 응답의 status='pending' 예상. 토큰 발급 안 됨."""
         return self._request("POST", "/auth/signup",
                               json={"email": email, "password": password})
 
     def login(self, email: str, password: str, hwid: str,
                hostname: str = "") -> dict:
+        """로그인 — active 사용자만 토큰 발급."""
         return self._request("POST", "/auth/login", json={
             "email": email, "password": password,
             "hwid": hwid, "hostname": hostname,
         })
+
+    def heartbeat(self, hwid: str) -> dict:
+        """3분마다 호출 — 상태 변화 즉시 감지 + last_seen 갱신."""
+        return self._request("POST", "/auth/heartbeat", json={"hwid": hwid})
 
     def list_devices(self) -> list[dict]:
         return self._request("GET", "/auth/devices")
 
     def remove_device(self, device_id: str) -> dict:
         return self._request("DELETE", f"/auth/devices/{device_id}")
-
-    # ── 동기화 (추후 추가) ──
 
     def health(self) -> dict:
         return self._request("GET", "/health")
