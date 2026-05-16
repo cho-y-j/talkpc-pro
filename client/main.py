@@ -76,6 +76,15 @@ def launch_main_app(api, license_key: str):
 
 
 def main():
+    # 시작 시 버전 체크 — 강제 업데이트면 즉시 종료
+    import os
+    from auth.updater import check_on_startup
+    from auth.api_client import DEFAULT_BASE
+    from version import __version__
+    api_base = os.environ.get("TALKPC_API_BASE") or DEFAULT_BASE
+    if not check_on_startup(api_base, __version__):
+        return  # 강제 업데이트 → 다운로드 페이지 열고 종료
+
     from ui.login_page import LoginWindow
     win = LoginWindow(on_success=launch_main_app)
     win.mainloop()
