@@ -1,0 +1,194 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────
+   Ferrari 디자인 토큰 (DESIGN.md 기반)
+   ───────────────────────────────────────── */
+:root {
+  /* Surface */
+  --canvas: #181818;          /* near-black, never pure black */
+  --canvas-elevated: #303030; /* cards, panels */
+  --canvas-light: #ffffff;    /* editorial bands */
+  --surface-light: #f7f7f7;
+  --surface-strong-light: #ebebeb;
+
+  /* Brand */
+  --primary: #da291c;         /* Rosso Corsa */
+  --primary-active: #b01e0a;
+  --primary-hover: #9d2211;
+
+  /* Text */
+  --ink: #ffffff;
+  --body: #969696;
+  --body-on-light: #181818;
+  --muted: #8f8f8f;
+
+  /* Hairlines */
+  --hairline: #303030;
+  --hairline-on-light: #d2d2d2;
+  --hairline-soft: #ebebeb;
+
+  /* Semantic */
+  --info: #4c98b9;
+  --success: #03904a;
+  --warning: #f13a2c;
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-canvas-elevated: var(--canvas-elevated);
+  --color-canvas-light: var(--canvas-light);
+  --color-primary: var(--primary);
+  --color-primary-active: var(--primary-active);
+  --color-ink: var(--ink);
+  --color-body: var(--body);
+  --color-body-on-light: var(--body-on-light);
+  --color-hairline: var(--hairline);
+  --color-hairline-on-light: var(--hairline-on-light);
+  --font-sans: var(--font-inter);
+}
+
+html {
+  background: var(--canvas);
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-inter), -apple-system, system-ui, sans-serif;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Ferrari typography hierarchy */
+.t-display-mega {
+  font-size: clamp(40px, 8vw, 80px);
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+.t-display-xl {
+  font-size: clamp(32px, 5vw, 56px);
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+.t-display-lg {
+  font-size: clamp(26px, 4vw, 36px);
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+.t-display-md {
+  font-size: 26px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.t-title-md { font-size: 18px; font-weight: 700; line-height: 1.2; }
+.t-title-sm { font-size: 16px; font-weight: 500; line-height: 1.4; letter-spacing: 0.005em; }
+.t-body { font-size: 14px; font-weight: 400; line-height: 1.5; color: var(--body); }
+.t-body-md { font-size: 14px; font-weight: 400; line-height: 1.5; }
+.t-body-sm { font-size: 13px; font-weight: 400; line-height: 1.5; color: var(--body); }
+.t-caption { font-size: 12px; font-weight: 400; line-height: 1.4; color: var(--muted); }
+.t-uppercase {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.t-number {
+  font-size: clamp(48px, 8vw, 80px);
+  font-weight: 700;
+  line-height: 1.0;
+  letter-spacing: -0.02em;
+}
+
+/* Ferrari buttons — sharp 0px corners, uppercase, 1.4px tracking */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 48px;
+  padding: 0 32px;
+  background: var(--primary);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border: 1px solid var(--primary);
+  border-radius: 0;
+  cursor: pointer;
+  transition: background-color 120ms ease-out;
+}
+.btn-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+.btn-primary:active { background: var(--primary-active); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 48px;
+  padding: 0 32px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  cursor: pointer;
+  transition: background-color 120ms ease-out;
+}
+.btn-outline:hover { background: rgba(255,255,255,0.06); }
+
+.btn-outline-light {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 48px;
+  padding: 0 32px;
+  background: transparent;
+  color: var(--body-on-light);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border: 1px solid var(--body-on-light);
+  border-radius: 0;
+  cursor: pointer;
+}
+
+/* Inputs — sharp 4px corners */
+.input-dark {
+  height: 48px;
+  background: var(--canvas);
+  color: var(--ink);
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 0 16px;
+  font-size: 14px;
+  outline: none;
+  width: 100%;
+  transition: border-color 120ms ease-out;
+}
+.input-dark:focus { border-color: var(--ink); }
+.input-dark::placeholder { color: var(--muted); }
+
+/* Hairline */
+.hairline { border-color: var(--hairline); }
+.hairline-light { border-color: var(--hairline-on-light); }
+
+/* Nav uppercase */
+.nav-link {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--body);
+  transition: color 120ms ease-out;
+}
+.nav-link:hover { color: var(--ink); }
