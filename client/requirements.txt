@@ -1,0 +1,16 @@
+# talk-local 기존 의존성 (검증된 95% Paddle 파이프라인 동일)
+paddlepaddle==2.6.2
+paddleocr==2.7.3
+numpy<2.0
+opencv-python-headless<4.10
+pytesseract
+pillow
+customtkinter
+pyautogui
+pywin32
+openpyxl
+pymysql
+python-dotenv
+
+# 추가 (Pro 전용)
+httpx==0.28.1

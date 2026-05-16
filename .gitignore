@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Env / secrets
+.env
+.env.local
+*.env
+!.env.example
+
+# Local data
+logs/
+*.log
+session.json
+
+# PyInstaller
+*.spec.bak
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Alembic 생성된 마이그레이션은 보존 — 단 빈 versions 디렉토리는 .gitkeep 으로 추적
