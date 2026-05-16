@@ -306,6 +306,11 @@ class Scheduler:
 
         template_id = self.auto_send_settings.get("birthday_template_id", "")
         if not template_id:
+            self.orchestrator._emit_log(
+                "⚠ 자동 발송 활성화됨이지만 [생일 메시지 템플릿] 미설정 — "
+                "오늘 자동 발송 건너뜀. 설정 페이지에서 템플릿을 선택하세요.",
+                "error",
+            )
             return
 
         def runner():
@@ -330,6 +335,11 @@ class Scheduler:
 
         template_id = self.auto_send_settings.get("birthday_template_id", "")
         if not template_id:
+            self.orchestrator._emit_log(
+                "⚠ 자동 발송 활성화됨이지만 [생일 메시지 템플릿] 미설정 — "
+                "오늘 자동 발송 건너뜀. 설정 페이지에서 템플릿을 선택하세요.",
+                "error",
+            )
             return
 
         template = self.orchestrator.message_engine.get_template_by_id(template_id)
@@ -355,6 +365,19 @@ class Scheduler:
 
         template_id = self.auto_send_settings.get("anniversary_template_id", "")
         if not template_id:
+            # 기념일은 선택적이므로 활성+생일 템플릿만 있으면 OK.
+            # 단, 기념일이 있는 연락처가 오늘 있는데 템플릿 미설정이면 경고.
+            today_mmdd = datetime.now().strftime("%m-%d")
+            has_today_anniv = any(
+                getattr(c, "anniversary", "") == today_mmdd
+                for c in self.orchestrator.contact_mgr.get_all()
+            )
+            if has_today_anniv:
+                self.orchestrator._emit_log(
+                    "⚠ 오늘 기념일 연락처가 있지만 [기념일 메시지 템플릿] "
+                    "미설정 — 자동 발송 건너뜀.",
+                    "warning",
+                )
             return
 
         template = self.orchestrator.message_engine.get_template_by_id(template_id)

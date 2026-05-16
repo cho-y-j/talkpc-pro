@@ -751,9 +751,18 @@ class SettingsPage(ctk.CTkFrame):
             auto_toggle_frame, text="",
             variable=self.auto_send_var,
             onvalue=True, offvalue=False,
-            progress_color=T.ACCENT
+            progress_color=T.ACCENT,
+            command=self._update_auto_send_warning,
         )
         self.auto_send_switch.pack(side="left")
+
+        # 미설정 경고 라벨 (조건부 표시)
+        self.auto_warn_label = ctk.CTkLabel(
+            auto_toggle_frame, text="",
+            font=(T.get_font_family(), T.FONT_SIZE_SMALL, "bold"),
+            text_color=T.ERROR,
+        )
+        self.auto_warn_label.pack(side="left", padx=(12, 0))
 
         # 발송 모드 (json: contacts.json birthday 필드 / kakao_ocr: 카톡 친구탭 OCR)
         mode_frame = ctk.CTkFrame(auto_card, fg_color="transparent", height=36)
@@ -837,7 +846,8 @@ class SettingsPage(ctk.CTkFrame):
             font=(T.get_font_family(), T.FONT_SIZE_SMALL),
             fg_color=T.BG_INPUT, button_color=T.BG_HOVER,
             text_color=T.TEXT_PRIMARY, height=30, corner_radius=4,
-            width=200
+            width=200,
+            command=lambda _: self._update_auto_send_warning(),
         )
         self.bd_template_menu.pack(side="left")
 
@@ -863,6 +873,7 @@ class SettingsPage(ctk.CTkFrame):
 
         # 템플릿 드롭다운 로드
         self._refresh_auto_send_templates()
+        self._update_auto_send_warning()
 
         # 하단 여백
         ctk.CTkFrame(auto_card, fg_color="transparent", height=12).pack()
@@ -1206,6 +1217,20 @@ class SettingsPage(ctk.CTkFrame):
                 an_name = t.name
         self.bd_template_var.set(bd_name)
         self.an_template_var.set(an_name)
+        self._update_auto_send_warning()
+
+    def _update_auto_send_warning(self):
+        """자동 발송 활성화 + 생일 템플릿 미선택 시 빨간 경고 표시."""
+        if not hasattr(self, "auto_warn_label"):
+            return
+        enabled = self.auto_send_var.get()
+        bd_name = self.bd_template_var.get() if hasattr(self, "bd_template_var") else "(없음)"
+        if enabled and bd_name == "(없음)":
+            self.auto_warn_label.configure(
+                text="⚠ 생일 템플릿 미선택 — 자동 발송 안 됨"
+            )
+        else:
+            self.auto_warn_label.configure(text="")
 
     def _save_auto_send_settings(self):
         """자동 발송 설정을 스케줄러에 저장"""
@@ -1215,6 +1240,19 @@ class SettingsPage(ctk.CTkFrame):
         an_name = self.an_template_var.get()
         bd_id = self._template_id_map.get(bd_name, "")
         an_id = self._template_id_map.get(an_name, "")
+
+        # 자동 발송 활성화 시 생일 템플릿 필수 검증
+        if self.auto_send_var.get() and not bd_id:
+            from tkinter import messagebox
+            choice = messagebox.askyesno(
+                "생일 템플릿 미선택",
+                "자동 발송이 활성화되어 있는데 [생일 메시지 템플릿]이 선택되지 않았습니다.\n"
+                "이대로 저장하면 생일 자동 발송이 동작하지 않습니다.\n\n"
+                "그대로 저장하시겠습니까?\n"
+                "(No 를 누르면 메시지 페이지에서 템플릿을 먼저 만드세요)",
+            )
+            if not choice:
+                return  # 저장 취소 — 사용자가 템플릿 만들러 가게
 
         # 라벨 → 모드 코드
         mode_label = self.auto_mode_var.get()
