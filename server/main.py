@@ -3,7 +3,6 @@ import os
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
-from mangum import Mangum
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -206,5 +205,5 @@ def privacy_page():
     return _PRIVACY_HTML
 
 
-# Vercel serverless 진입점
-handler = Mangum(app, lifespan="off")
+# Vercel Python runtime 은 모듈 레벨 `app` (ASGI) 자동 감지.
+# Mangum 은 AWS Lambda 전용이라 제거 — Vercel 에선 ASGI app 그대로 사용.
