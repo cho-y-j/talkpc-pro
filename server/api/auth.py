@@ -16,6 +16,7 @@ from models.user import (
 from security import (
     create_access_token, generate_license_key, hash_password, verify_password,
 )
+from email_service import email_signup_welcome
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -88,6 +89,8 @@ def signup(req: SignupRequest, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
+    # 환영 이메일 (Resend 미설정 시 silent skip)
+    email_signup_welcome(user.email, user.license_key)
     # 토큰 발급 안 함 — pending 이라 로그인 차단
     return _build_auth_response(user, with_token=False)
 

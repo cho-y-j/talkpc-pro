@@ -16,6 +16,7 @@ from models.user import (
     USER_STATUS_PENDING, USER_STATUS_ACTIVE, USER_STATUS_EXPIRED,
     USER_STATUS_SUSPENDED, USER_STATUS_REJECTED,
 )
+from email_service import email_approved, email_suspended
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -137,6 +138,7 @@ def change_user_status(
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "사용자 없음")
+    prev_status = user.status
     user.status = req.status
     user.status_changed_at = datetime.utcnow()
     if req.note:
@@ -144,6 +146,12 @@ def change_user_status(
     if req.expires_at is not None:
         user.expires_at = req.expires_at
     db.commit()
+    # 상태 전환 이메일 (best-effort)
+    if prev_status != req.status:
+        if req.status == USER_STATUS_ACTIVE and prev_status == USER_STATUS_PENDING:
+            email_approved(user.email)
+        elif req.status == USER_STATUS_SUSPENDED:
+            email_suspended(user.email, req.note)
     return {"ok": True, "status": user.status}
 
 

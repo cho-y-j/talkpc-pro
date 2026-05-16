@@ -31,6 +31,7 @@ from db import get_db
 from deps import current_user, admin_user
 from models import User, Payment
 from models.user import USER_STATUS_ACTIVE
+from email_service import email_payment_receipt
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 
@@ -189,6 +190,8 @@ def verify_payment(req: VerifyRequest, user: User = Depends(current_user),
     )
     db.add(pay)
     new_exp = _grant_subscription(db, user, req.plan, pay)
+    email_payment_receipt(user.email, req.plan, paid_amount,
+                            pay.receipt_url, new_exp.strftime("%Y-%m-%d"))
     return VerifyResponse(ok=True, new_expires_at=new_exp,
                             receipt_url=pay.receipt_url)
 
