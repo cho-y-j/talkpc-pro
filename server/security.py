@@ -4,20 +4,26 @@ import string
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from config import settings
 
-_pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def _to_bytes(plain: str) -> bytes:
+    # bcrypt 는 72바이트 제한 — 초과 시 truncate (passlib 4.x 호환성 회피).
+    return plain.encode("utf-8")[:72]
 
 
 def hash_password(plain: str) -> str:
-    return _pwd_ctx.hash(plain)
+    return bcrypt.hashpw(_to_bytes(plain), bcrypt.gensalt()).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return _pwd_ctx.verify(plain, hashed)
+    try:
+        return bcrypt.checkpw(_to_bytes(plain), hashed.encode())
+    except Exception:
+        return False
 
 
 def generate_license_key() -> str:
