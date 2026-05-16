@@ -803,6 +803,61 @@ class Orchestrator:
             self._kakao_friends = KakaoFriends(win32, ocr, self.screen_capture)
         return self._kakao_friends
 
+    def _sync_birthday_to_contacts(self, targets: list[dict],
+                                     today_mmdd: str,
+                                     create_new: bool = False) -> dict:
+        """카톡 OCR 으로 발견된 '오늘 생일자' 를 연락처 DB 에 반영.
+
+        매칭 정책:
+        - 이름 정확 일치 (공백 무시)
+        - 빈 birthday → today_mmdd 로 채움
+        - 이미 birthday 있으면 변경 없음
+        - 미매칭: create_new=True 면 새 연락처 생성, False 면 스킵
+
+        Returns: {updated, created, skipped_already_set, skipped_no_match}
+        """
+        today_targets = [t for t in targets
+                          if t.get("day") == "today"
+                          and t.get("action") in ("sent", "dry_run_sent",
+                                                    "would_send")]
+        contacts = self.contact_mgr.get_all()
+        by_name = {c.name.replace(" ", ""): c for c in contacts}
+
+        updated = created = skipped_set = skipped_no_match = 0
+        for t in today_targets:
+            name_raw = (t.get("name") or "").strip()
+            if not name_raw:
+                continue
+            key = name_raw.replace(" ", "")
+            existing = by_name.get(key)
+            if existing:
+                if not existing.birthday:
+                    existing.birthday = today_mmdd
+                    if not existing.memo:
+                        existing.memo = "카톡에서 생일 자동 수집"
+                    updated += 1
+                else:
+                    skipped_set += 1
+            elif create_new:
+                from core.contact_manager import Contact
+                c = Contact(
+                    name=name_raw, category="kakao_friend",
+                    birthday=today_mmdd,
+                    memo="카톡 생일자 자동 추가",
+                )
+                self.contact_mgr.contacts.append(c)
+                by_name[key] = c
+                created += 1
+            else:
+                skipped_no_match += 1
+        if updated or created:
+            self.contact_mgr.save()
+        return {
+            "updated": updated, "created": created,
+            "skipped_already_set": skipped_set,
+            "skipped_no_match": skipped_no_match,
+        }
+
     def run_kakao_birthday_send(self, template_content: str = None,
                                   template_id: str = None,
                                   image_path: str = None,
@@ -866,6 +921,30 @@ class Orchestrator:
         else:
             self._emit_log(f"❌ 실패: {result['reason']}", "error")
             self._emit_state(OrchestratorState.ERROR)
+
+        # 카톡 OCR 으로 발견한 오늘 생일자 → 연락처 DB 자동 반영
+        try:
+            sync_cfg = self.config.get("auto_sync_birthday", {})
+            if sync_cfg.get("enabled", True):
+                from datetime import datetime
+                sync = self._sync_birthday_to_contacts(
+                    result.get("targets", []),
+                    today_mmdd=datetime.now().strftime("%m-%d"),
+                    create_new=sync_cfg.get("create_new", False),
+                )
+                parts = []
+                if sync["updated"]:
+                    parts.append(f"빈 생일 {sync['updated']}명 채움")
+                if sync["created"]:
+                    parts.append(f"새 연락처 {sync['created']}명 추가")
+                if sync["skipped_already_set"]:
+                    parts.append(f"이미 입력됨 {sync['skipped_already_set']}명")
+                if sync["skipped_no_match"]:
+                    parts.append(f"미매칭 {sync['skipped_no_match']}명")
+                if parts:
+                    self._emit_log("📝 연락처 DB 동기화: " + ", ".join(parts))
+        except Exception as e:
+            self._emit_log(f"연락처 동기화 실패 (계속 진행): {e}", "warning")
 
         # 결과를 리포트로
         try:

@@ -794,6 +794,39 @@ class SettingsPage(ctk.CTkFrame):
             justify="left"
         ).pack(padx=16, pady=(0, 4), anchor="w")
 
+        # ── 연락처 DB 자동 반영 옵션 ──
+        sync_frame = ctk.CTkFrame(auto_card, fg_color="transparent", height=36)
+        sync_frame.pack(fill="x", padx=16, pady=4)
+        sync_frame.pack_propagate(False)
+        ctk.CTkLabel(
+            sync_frame, text="발견 생일자 DB 자동 반영",
+            font=(T.get_font_family(), T.FONT_SIZE_BODY),
+            text_color=T.TEXT_SECONDARY, width=180
+        ).pack(side="left")
+        self.sync_bd_var = ctk.BooleanVar(value=True)
+        ctk.CTkSwitch(
+            sync_frame, text="동명 연락처 빈 생일 채움",
+            variable=self.sync_bd_var,
+            font=(T.get_font_family(), T.FONT_SIZE_SMALL),
+            progress_color=T.SUCCESS,
+        ).pack(side="left")
+
+        create_frame = ctk.CTkFrame(auto_card, fg_color="transparent", height=36)
+        create_frame.pack(fill="x", padx=16, pady=4)
+        create_frame.pack_propagate(False)
+        ctk.CTkLabel(
+            create_frame, text="",
+            font=(T.get_font_family(), T.FONT_SIZE_BODY),
+            text_color=T.TEXT_SECONDARY, width=180
+        ).pack(side="left")
+        self.sync_create_var = ctk.BooleanVar(value=False)
+        ctk.CTkSwitch(
+            create_frame, text="미매칭이면 새 연락처 생성",
+            variable=self.sync_create_var,
+            font=(T.get_font_family(), T.FONT_SIZE_SMALL),
+            progress_color=T.WARNING if hasattr(T, "WARNING") else T.ACCENT,
+        ).pack(side="left")
+
         # 발송 시간
         auto_time_frame = ctk.CTkFrame(auto_card, fg_color="transparent", height=36)
         auto_time_frame.pack(fill="x", padx=16, pady=4)
@@ -1355,6 +1388,13 @@ class SettingsPage(ctk.CTkFrame):
             entry.delete(0, "end")
             entry.insert(0, str(ad.get(key, default)))
 
+        # 카톡 → 연락처 DB 자동 반영 설정
+        sync_cfg = config.get("auto_sync_birthday", {})
+        if hasattr(self, "sync_bd_var"):
+            self.sync_bd_var.set(sync_cfg.get("enabled", True))
+        if hasattr(self, "sync_create_var"):
+            self.sync_create_var.set(sync_cfg.get("create_new", False))
+
         # 세종텔레콤 설정 로드
         sj = config.get("sejong", {})
         sj_db = sj.get("db", {})
@@ -1427,6 +1467,12 @@ class SettingsPage(ctk.CTkFrame):
             s.rest_min = ad["rest_min"]
             s.rest_max = ad["rest_max"]
             s.daily_limit = ad["daily_limit"]
+        # 카톡 → 연락처 DB 자동 반영 설정 저장
+        config["auto_sync_birthday"] = {
+            "enabled": bool(self.sync_bd_var.get()) if hasattr(self, "sync_bd_var") else True,
+            "create_new": bool(self.sync_create_var.get()) if hasattr(self, "sync_create_var") else False,
+        }
+
         # 세종텔레콤: .env에 민감 정보 저장, config에는 비밀번호 제외
         self._save_sejong_env()
         sj = self._get_sejong_config()
