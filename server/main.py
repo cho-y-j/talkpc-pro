@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 
-from api import auth, admin, sync, version
+from api import auth, admin, sync, version, logs
 
 app = FastAPI(
     title="TalkPC Pro API",
@@ -22,6 +22,7 @@ app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(sync.router)
 app.include_router(version.router)
+app.include_router(logs.router)
 
 
 @app.get("/")

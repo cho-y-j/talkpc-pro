@@ -128,4 +128,17 @@ export const api = {
 
   getStats: (days = 30) =>
     request<StatsResponse>("GET", `/admin/stats?days=${days}`),
+
+  // ── 부정 사용 탐지 ──
+
+  detectAbuse: (days = 1, threshold = 100) =>
+    request<AbuseRow[]>("GET", `/logs/admin/abuse?days=${days}&threshold=${threshold}`),
+};
+
+export type AbuseRow = {
+  user_id: string;
+  email: string;
+  status: string;
+  count: number;
+  period_days: number;
 };

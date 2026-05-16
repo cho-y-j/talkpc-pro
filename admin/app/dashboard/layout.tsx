@@ -26,6 +26,7 @@ export default function DashboardLayout({
   const nav = [
     { href: "/dashboard", label: "통계" },
     { href: "/dashboard/users", label: "사용자 관리" },
+    { href: "/dashboard/abuse", label: "부정 사용 감지" },
   ];
 
   return (
