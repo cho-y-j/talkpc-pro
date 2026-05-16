@@ -33,6 +33,7 @@ build/
 .env.local
 *.env
 !.env.example
+!admin/.env.production
 
 # Local data
 logs/
