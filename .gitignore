@@ -5,17 +5,16 @@ node_modules/
 *.tsbuildinfo
 next-env.d.ts
 
-# Models / large binaries (각 사용자 빌드 시 별도 다운로드)
-client/paddle_models/
-*.pdmodel
-*.pdiparams
+# Models — git 추적 (빌드 시 필요, 총 30MB)
+# client/paddle_models/ 는 commit 됨
+# *.pdmodel / *.pdiparams 도 추적
 
-# User data (사용자 PC 별 — git 추적 안 함)
+# User data (사용자 PC 별 런타임 데이터 — git 추적 안 함)
 client/logs/
 client/data/contacts.json
 client/data/schedules.json
-client/data/templates/*.json
 client/data/send_queue_state.json
+# templates/ 의 사용자 커스텀 파일도 제외, 단 시드/.gitkeep 은 강제 추가
 
 # Python
 __pycache__/
