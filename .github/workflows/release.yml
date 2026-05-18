@@ -37,7 +37,7 @@ jobs:
         shell: pwsh
         run: |
           Compress-Archive -Path dist/TalkPC-Pro/* `
-            -DestinationPath dist/TalkPC-Pro-${{ github.ref_name }}-windows-x64.zip `
+            -DestinationPath dist/TalkPC-Pro-windows-x64.zip `
             -Force
 
       - name: Install Inno Setup
@@ -60,8 +60,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            client/dist/TalkPC-Pro-${{ github.ref_name }}-windows-x64.zip
-            installer/output/TalkPC-Pro-Setup-*.exe
+            client/dist/TalkPC-Pro-windows-x64.zip
+            installer/output/TalkPC-Pro-Setup.exe
           name: TalkPC Pro ${{ github.ref_name }}
           body: |
             ## TalkPC Pro ${{ github.ref_name }}

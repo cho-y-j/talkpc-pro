@@ -28,7 +28,9 @@ UsePreviousAppDir=yes
 
 ; 출력
 OutputDir=output
-OutputBaseFilename=TalkPC-Pro-Setup-v{#MyAppVersion}
+; 버전 미포함 고정 파일명 — landing 의 직접 다운로드 링크용
+; (/releases/latest/download/TalkPC-Pro-Setup.exe 가 항상 최신 가리킴)
+OutputBaseFilename=TalkPC-Pro-Setup
 SetupIconFile=
 Compression=lzma2/ultra64
 SolidCompression=yes

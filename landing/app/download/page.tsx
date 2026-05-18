@@ -1,9 +1,15 @@
 import Link from "next/link";
+import Image from "next/image";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 
-const GITHUB_RELEASES =
-  "https://github.com/cho-y-j/talkpc-pro/releases/latest";
+// 직접 다운로드 링크 — GitHub Releases 페이지를 거치지 않아
+// 사용자가 'Source code' 같은 개발자용 파일을 안 보게 함.
+// /releases/latest/download/<filename> 가 항상 최신 release 의 해당 파일.
+const REPO = "https://github.com/cho-y-j/talkpc-pro";
+const SETUP_URL = `${REPO}/releases/latest/download/TalkPC-Pro-Setup.exe`;
+const ZIP_URL = `${REPO}/releases/latest/download/TalkPC-Pro-windows-x64.zip`;
+const RELEASE_NOTES_URL = `${REPO}/releases/latest`;
 
 export default function DownloadPage() {
   return (
@@ -20,11 +26,11 @@ export default function DownloadPage() {
             바로 사용 가능합니다.
           </p>
 
-          {/* 다운로드 + 가이드 */}
+          {/* 다운로드 카드 */}
           <div className="mt-12 grid gap-8 lg:grid-cols-2">
             <div className="border border-[color:var(--hairline)] p-10">
               <p className="t-uppercase text-[color:var(--body)]">
-                최신 버전 · v0.1.0
+                최신 버전
               </p>
               <h2 className="mt-4 text-2xl font-medium">
                 Setup 인스톨러
@@ -41,16 +47,11 @@ export default function DownloadPage() {
                 <li>· 제거 프로그램 등록 (간편 삭제)</li>
                 <li>· 한글 사용자명 PC 도 정상 작동</li>
               </ul>
-              <a
-                href={GITHUB_RELEASES}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-primary mt-10 w-full"
-              >
+              <a href={SETUP_URL} className="btn-primary mt-10 w-full">
                 Setup.exe 다운로드
               </a>
               <p className="t-caption mt-4 text-center">
-                GitHub Releases — `TalkPC-Pro-Setup-v0.1.0.exe`
+                `TalkPC-Pro-Setup.exe` · ~290MB
               </p>
             </div>
 
@@ -72,21 +73,16 @@ export default function DownloadPage() {
                 <li>· 권장: `D:\TalkPC-Pro\` 또는 `C:\TalkPC-Pro\`</li>
                 <li>· 관리자 권한 불필요</li>
               </ul>
-              <a
-                href={GITHUB_RELEASES}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-outline mt-10 w-full"
-              >
+              <a href={ZIP_URL} className="btn-outline mt-10 w-full">
                 ZIP 다운로드
               </a>
               <p className="t-caption mt-4 text-center">
-                `TalkPC-Pro-v0.1.0-windows-x64.zip`
+                `TalkPC-Pro-windows-x64.zip` · ~290MB
               </p>
             </div>
           </div>
 
-          {/* SmartScreen 차단 해제 안내 */}
+          {/* SmartScreen 차단 해제 — 이미지 포함 */}
           <div
             className="mt-16 border-l-2 border-[color:var(--primary)] p-8"
             style={{ background: "var(--canvas-elevated)" }}
@@ -97,28 +93,65 @@ export default function DownloadPage() {
             <h3 className="t-title-md mb-4">
               처음 실행 시 파란 SmartScreen 경고가 뜹니다.
             </h3>
-            <p className="t-body-sm mb-6">
+            <p className="t-body-sm mb-8">
               코드 사이닝 인증서 발급 전이라 Windows 가 "인식할 수 없는 앱"
               으로 표시합니다. 우리 제품이 맞으니 안전하게 우회하세요.
             </p>
 
-            <div className="space-y-6">
+            <div className="grid gap-8 lg:grid-cols-2">
               <div>
-                <p className="t-uppercase mb-2">방법 ① 다운로드 후 즉시 차단 해제</p>
-                <ol className="ml-4 space-y-1 text-[14px] text-[color:var(--body)]">
+                <p className="t-uppercase mb-3">
+                  방법 ① 다운로드 후 즉시 차단 해제 (권장)
+                </p>
+                <ol className="mb-6 ml-4 space-y-2 text-[14px] text-[color:var(--body)]">
                   <li>1. 다운받은 파일 (exe/zip) <b>우클릭 → 속성</b></li>
-                  <li>2. 일반 탭 맨 아래 <b>"차단 해제"</b> 체크박스 클릭</li>
-                  <li>3. <b>확인</b> → 실행</li>
+                  <li>2. 일반 탭 맨 아래 <b>"차단 해제(K)"</b> 체크박스 클릭</li>
+                  <li>3. <b>확인</b> 또는 <b>적용</b> → 실행</li>
                 </ol>
+                <div className="border border-[color:var(--hairline)] bg-white p-2">
+                  <Image
+                    src="/unblock-guide.jpg"
+                    alt="속성 창의 '차단 해제' 체크박스 위치"
+                    width={480}
+                    height={620}
+                    className="w-full max-w-md"
+                  />
+                </div>
+                <p className="t-caption mt-3 text-center">
+                  ↑ 빨간 박스의 "차단 해제(K)" 를 체크하세요.
+                </p>
               </div>
 
               <div>
-                <p className="t-uppercase mb-2">방법 ② 실행 시 경고 우회</p>
-                <ol className="ml-4 space-y-1 text-[14px] text-[color:var(--body)]">
+                <p className="t-uppercase mb-3">
+                  방법 ② 실행 시 경고 우회
+                </p>
+                <ol className="ml-4 space-y-2 text-[14px] text-[color:var(--body)]">
                   <li>1. 파란 창 좌측 작은 글씨 <b>"추가 정보"</b> 클릭</li>
                   <li>2. 나타나는 <b>"실행"</b> 버튼 클릭</li>
-                  <li>3. 다음부터는 자동 실행</li>
+                  <li>3. 다음부터는 자동 실행 (한 번만 우회하면 됨)</li>
                 </ol>
+                <div
+                  className="mt-6 border border-[color:var(--hairline)] p-6"
+                  style={{ background: "var(--canvas)" }}
+                >
+                  <p className="t-uppercase mb-3 text-[color:var(--body)]">
+                    SmartScreen 경고 예시
+                  </p>
+                  <div className="space-y-2 text-[13px] text-[color:var(--body)]">
+                    <p className="font-bold text-white">Windows의 PC 보호</p>
+                    <p>
+                      Microsoft Defender SmartScreen에서 인식할 수 없는 앱의
+                      시작을 차단했습니다.
+                    </p>
+                    <p
+                      className="mt-3 cursor-pointer underline"
+                      style={{ color: "var(--primary)" }}
+                    >
+                      추가 정보 ← 이걸 클릭
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -141,7 +174,7 @@ export default function DownloadPage() {
                 위 Setup.exe 권장. 다운 후 차단 해제 (위 안내).
               </Step>
               <Step n="4" title="설치 실행">
-                Setup.exe 더블 클릭 → 다음 → 완료. 바탕화면 아이콘 자동 생성.
+                Setup.exe 더블 클릭 → 다음 → 완료. 바탕화면 아이콘 자동.
               </Step>
               <Step n="5" title="로그인">
                 카카오톡 PC 켜둔 채로 앱 실행 → 가입한 이메일/비번 로그인.
@@ -152,14 +185,24 @@ export default function DownloadPage() {
             </ol>
           </div>
 
-          <div className="mt-16 border-l-2 border-[color:var(--primary)] pl-6">
-            <p className="t-uppercase mb-2 text-[color:var(--body)]">
-              시스템 요구사항
-            </p>
-            <p className="t-body-sm">
-              Windows 10 / 11 64-bit · 메모리 4GB 이상 ·
-              카카오톡 PC 설치 · 인터넷 연결 (서버 동기화)
-            </p>
+          <div className="mt-16 flex flex-wrap items-center justify-between gap-4 border-l-2 border-[color:var(--primary)] pl-6">
+            <div>
+              <p className="t-uppercase mb-2 text-[color:var(--body)]">
+                시스템 요구사항
+              </p>
+              <p className="t-body-sm">
+                Windows 10 / 11 64-bit · 메모리 4GB 이상 ·
+                카카오톡 PC 설치 · 인터넷 연결
+              </p>
+            </div>
+            <a
+              href={RELEASE_NOTES_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="t-body-sm underline text-[color:var(--body)] hover:text-white"
+            >
+              릴리즈 노트 →
+            </a>
           </div>
         </div>
       </section>
