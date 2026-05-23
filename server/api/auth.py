@@ -132,10 +132,11 @@ def login(request: Request, req: LoginRequest, db: Session = Depends(get_db)):
         device.last_seen = datetime.utcnow()
     else:
         active_count = db.query(Device).filter(Device.user_id == user.id).count()
-        if active_count >= settings.DEVICES_PER_USER:
+        limit = user.device_limit if user.device_limit is not None else settings.DEVICES_PER_USER
+        if active_count >= limit:
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN,
-                f"라이선스 디바이스 한도 초과 ({settings.DEVICES_PER_USER}대). "
+                f"라이선스 디바이스 한도 초과 ({limit}대). "
                 f"기존 디바이스를 해제하세요.",
             )
         device = Device(user_id=user.id, hwid=req.hwid, hostname=req.hostname)

@@ -71,6 +71,45 @@ export default function UsersPage() {
     }
   }
 
+  async function changePassword(user: UserRow) {
+    const pw = prompt(`'${user.email}' 의 새 비밀번호 (4자 이상):`);
+    if (!pw) return;
+    if (pw.length < 4) {
+      alert("비밀번호는 4자 이상이어야 합니다");
+      return;
+    }
+    try {
+      await api.changeUserPassword(user.id, pw);
+      alert(`'${user.email}' 비밀번호 변경 완료`);
+    } catch (e) {
+      if (e instanceof ApiError) alert(e.message);
+    }
+  }
+
+  async function changeDeviceLimit(user: UserRow) {
+    const cur = user.device_limit ?? "";
+    const input = prompt(
+      `'${user.email}' 디바이스 한도 (현재 적용: ${user.effective_device_limit}대${
+        user.device_limit === null ? ", 기본값" : ""
+      })\n` +
+        `숫자 입력 (1 이상), 비우면 기본값으로 복귀:`,
+      String(cur)
+    );
+    if (input === null) return;
+    const trimmed = input.trim();
+    const limit = trimmed === "" ? null : Number(trimmed);
+    if (limit !== null && (!Number.isInteger(limit) || limit < 1)) {
+      alert("1 이상의 정수를 입력하세요");
+      return;
+    }
+    try {
+      await api.setDeviceLimit(user.id, limit);
+      await load();
+    } catch (e) {
+      if (e instanceof ApiError) alert(e.message);
+    }
+  }
+
   async function deleteUser(user: UserRow) {
     if (!confirm(`'${user.email}' 사용자를 완전히 삭제합니까?\n(연락처/템플릿/발송로그도 삭제됩니다)`)) return;
     try {
@@ -126,6 +165,7 @@ export default function UsersPage() {
               <TableHead>상태</TableHead>
               <TableHead>라이선스</TableHead>
               <TableHead className="text-right">디바이스</TableHead>
+              <TableHead className="text-right">한도</TableHead>
               <TableHead className="text-right">30일 발송</TableHead>
               <TableHead>가입일</TableHead>
               <TableHead>마지막 로그인</TableHead>
@@ -135,7 +175,7 @@ export default function UsersPage() {
           <TableBody>
             {data.users.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center text-slate-400">
+                <TableCell colSpan={9} className="h-24 text-center text-slate-400">
                   사용자 없음
                 </TableCell>
               </TableRow>
@@ -157,6 +197,12 @@ export default function UsersPage() {
                   </TableCell>
                   <TableCell className="font-mono text-xs">{u.license_key}</TableCell>
                   <TableCell className="text-right">{u.device_count}</TableCell>
+                  <TableCell className="text-right">
+                    {u.effective_device_limit}
+                    {u.device_limit !== null && (
+                      <span className="ml-1 text-xs text-purple-600">★</span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right">{u.send_count_30d}</TableCell>
                   <TableCell className="text-xs">
                     {new Date(u.created_at).toLocaleDateString("ko-KR")}
@@ -192,6 +238,13 @@ export default function UsersPage() {
                             ⌛ 만료 처리
                           </DropdownMenuItem>
                         )}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => changePassword(u)}>
+                          🔑 비밀번호 변경
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => changeDeviceLimit(u)}>
+                          💻 디바이스 한도 변경
+                        </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
                           className="text-red-600"

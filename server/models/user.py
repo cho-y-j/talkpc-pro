@@ -1,7 +1,7 @@
 """User — 이메일 + 비밀번호 해시 + 라이선스 키 + 상태 머신."""
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import String, DateTime
+from sqlalchemy import String, DateTime, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 from uuid import uuid4
 
@@ -45,3 +45,5 @@ class User(Base):
 
     # 어드민 권한 (별도 admin 페이지 인증용)
     is_admin: Mapped[bool] = mapped_column(default=False)
+    # 유저별 디바이스 한도 override. NULL 이면 settings.DEVICES_PER_USER 사용.
+    device_limit: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

@@ -17,6 +17,8 @@ from models.user import (
     USER_STATUS_SUSPENDED, USER_STATUS_REJECTED,
 )
 from email_service import email_approved, email_suspended
+from security import hash_password
+from config import settings
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -36,6 +38,8 @@ class UserRow(BaseModel):
     created_at: datetime
     device_count: int = 0
     send_count_30d: int = 0
+    device_limit: Optional[int] = None  # None 이면 global default 사용
+    effective_device_limit: int = 1     # 실제 적용되는 한도
 
 
 class UsersListResponse(BaseModel):
@@ -52,6 +56,14 @@ class StatusChangeRequest(BaseModel):
     status: str  # active | suspended | rejected | expired
     note: str = ""
     expires_at: Optional[datetime] = None
+
+
+class PasswordChangeRequest(BaseModel):
+    password: str
+
+
+class DeviceLimitRequest(BaseModel):
+    limit: Optional[int] = None  # None = global default 로 reset
 
 
 class StatsResponse(BaseModel):
@@ -110,6 +122,11 @@ def list_users(
             created_at=u.created_at,
             device_count=device_counts.get(u.id, 0),
             send_count_30d=send_counts.get(u.id, 0),
+            device_limit=u.device_limit,
+            effective_device_limit=(
+                u.device_limit if u.device_limit is not None
+                else settings.DEVICES_PER_USER
+            ),
         )
         for u in users
     ]
@@ -153,6 +170,43 @@ def change_user_status(
         elif req.status == USER_STATUS_SUSPENDED:
             email_suspended(user.email, req.note)
     return {"ok": True, "status": user.status}
+
+
+@router.patch("/users/{user_id}/password")
+def change_user_password(
+    user_id: str, req: PasswordChangeRequest,
+    _admin: User = Depends(admin_user),
+    db: Session = Depends(get_db),
+):
+    """어드민이 사용자 비번을 강제 변경."""
+    if len(req.password) < 4:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                              "비밀번호는 4자 이상이어야 합니다")
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "사용자 없음")
+    user.password_hash = hash_password(req.password)
+    db.commit()
+    return {"ok": True}
+
+
+@router.patch("/users/{user_id}/device-limit")
+def change_device_limit(
+    user_id: str, req: DeviceLimitRequest,
+    _admin: User = Depends(admin_user),
+    db: Session = Depends(get_db),
+):
+    """디바이스 한도 override. limit=None 으로 보내면 global default 로 복귀."""
+    if req.limit is not None and req.limit < 1:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                              "한도는 1 이상이어야 합니다")
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "사용자 없음")
+    user.device_limit = req.limit
+    db.commit()
+    effective = req.limit if req.limit is not None else settings.DEVICES_PER_USER
+    return {"ok": True, "device_limit": req.limit, "effective": effective}
 
 
 @router.delete("/users/{user_id}")

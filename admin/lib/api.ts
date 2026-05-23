@@ -65,6 +65,8 @@ export type UserRow = {
   created_at: string;
   device_count: number;
   send_count_30d: number;
+  device_limit: number | null;
+  effective_device_limit: number;
 };
 
 export type UsersListResponse = {
@@ -125,6 +127,18 @@ export const api = {
 
   deleteUser: (userId: string) =>
     request<{ ok: boolean }>("DELETE", `/admin/users/${userId}`),
+
+  changeUserPassword: (userId: string, password: string) =>
+    request<{ ok: boolean }>("PATCH", `/admin/users/${userId}/password`, {
+      password,
+    }),
+
+  setDeviceLimit: (userId: string, limit: number | null) =>
+    request<{ ok: boolean; device_limit: number | null; effective: number }>(
+      "PATCH",
+      `/admin/users/${userId}/device-limit`,
+      { limit }
+    ),
 
   getStats: (days = 30) =>
     request<StatsResponse>("GET", `/admin/stats?days=${days}`),
