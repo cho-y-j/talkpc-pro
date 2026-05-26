@@ -33,7 +33,8 @@ class App(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
 
         # 사이드바
-        self.sidebar = Sidebar(self, on_navigate=self._navigate)
+        self.sidebar = Sidebar(self, on_navigate=self._navigate,
+                                on_logout=self._logout)
         self.sidebar.grid(row=0, column=0, sticky="ns")
 
         # 메인 콘텐츠
@@ -164,6 +165,45 @@ class App(ctk.CTk):
                     "수집 실패", str(e), parent=self,
                 ))
         threading.Thread(target=runner, daemon=True).start()
+
+    def _logout(self):
+        """로그아웃 — 세션 삭제 후 로그인 화면으로 재시작."""
+        from tkinter import messagebox
+        if not messagebox.askyesno(
+            "로그아웃",
+            "로그아웃하시겠습니까?\n로그인 화면으로 돌아갑니다.",
+            parent=self,
+        ):
+            return
+
+        # 1) 세션 삭제 → 다음 실행 시 자동 로그인 안 됨
+        try:
+            from auth import SessionStore
+            SessionStore().clear()
+        except Exception:
+            pass
+
+        # 2) 발송/스케줄러 정지
+        try:
+            if self.orchestrator:
+                if self.orchestrator.state == "sending":
+                    self.orchestrator.stop_sending()
+                self.orchestrator.scheduler.stop()
+        except Exception:
+            pass
+
+        # 3) 새 인스턴스(=로그인 화면) 실행 후 현재 창 종료
+        #    nested mainloop 복잡성 회피 — 깨끗한 새 프로세스로 로그인부터 시작.
+        try:
+            import sys, os, subprocess
+            if getattr(sys, "frozen", False):
+                subprocess.Popen([sys.executable])
+            else:
+                subprocess.Popen([sys.executable, os.path.abspath(sys.argv[0])])
+        except Exception:
+            pass
+
+        self.destroy()
 
     def _on_close(self):
         if self.orchestrator:

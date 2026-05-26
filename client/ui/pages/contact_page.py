@@ -98,13 +98,29 @@ class ContactPage(ctk.CTkFrame):
         search_frame.pack_propagate(False)
 
         self.search_entry = ctk.CTkEntry(
-            search_frame, placeholder_text="🔍 이름, 회사, 메모로 검색...",
+            search_frame, placeholder_text="🔍 이름·회사·메모·생일 검색 (예: 03-15, 3월)...",
             font=(T.get_font_family(), T.FONT_SIZE_BODY),
             fg_color=T.BG_INPUT, border_color=T.BORDER,
             text_color=T.TEXT_PRIMARY, height=36, corner_radius=6
         )
-        self.search_entry.pack(fill="x")
+        self.search_entry.pack(side="left", fill="x", expand=True)
         self.search_entry.bind("<KeyRelease>", lambda e: self._on_search())
+
+        # 생일자 빠른 필터 — 검색창에 값을 넣어 재사용
+        ctk.CTkButton(
+            search_frame, text="🎂 오늘", width=70, height=36,
+            font=(T.get_font_family(), T.FONT_SIZE_SMALL),
+            fg_color=T.BG_HOVER, hover_color=T.ACCENT,
+            text_color=T.TEXT_PRIMARY, corner_radius=6,
+            command=self._filter_birthday_today,
+        ).pack(side="left", padx=(8, 0))
+        ctk.CTkButton(
+            search_frame, text="🎂 이번 달", width=80, height=36,
+            font=(T.get_font_family(), T.FONT_SIZE_SMALL),
+            fg_color=T.BG_HOVER, hover_color=T.ACCENT,
+            text_color=T.TEXT_PRIMARY, corner_radius=6,
+            command=self._filter_birthday_month,
+        ).pack(side="left", padx=(6, 0))
 
         # -- Treeview 스타일 (다크 테마) --
         style = ttk.Style()
@@ -127,7 +143,7 @@ class ContactPage(ctk.CTkFrame):
         tree_frame.pack(fill="both", expand=True, padx=24, pady=(0, 8))
 
         # 체크박스 컬럼 추가 — 다중선택용 (영구)
-        columns = ("check", "no", "name", "category", "phone", "company", "memo")
+        columns = ("check", "no", "name", "category", "phone", "company", "birthday", "memo")
         self.tree = ttk.Treeview(
             tree_frame, columns=columns, show="headings",
             selectmode="extended", style="Contact.Treeview"
@@ -140,6 +156,7 @@ class ContactPage(ctk.CTkFrame):
         self.tree.heading("category", text="카테고리", anchor="w")
         self.tree.heading("phone", text="전화번호", anchor="w")
         self.tree.heading("company", text="회사", anchor="w")
+        self.tree.heading("birthday", text="🎂 생일", anchor="center")
         self.tree.heading("memo", text="메모", anchor="w")
 
         self.tree.column("check", width=36, minwidth=30, stretch=False, anchor="center")
@@ -148,7 +165,8 @@ class ContactPage(ctk.CTkFrame):
         self.tree.column("category", width=80, minwidth=60)
         self.tree.column("phone", width=130, minwidth=100)
         self.tree.column("company", width=120, minwidth=80)
-        self.tree.column("memo", width=200, minwidth=100)
+        self.tree.column("birthday", width=64, minwidth=54, stretch=False, anchor="center")
+        self.tree.column("memo", width=180, minwidth=90)
 
         # 스크롤바
         scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
@@ -294,6 +312,7 @@ class ContactPage(ctk.CTkFrame):
                 iid = self.tree.insert("", 0, values=(
                     check_mark, idx, c.get("name", ""), cat_text,
                     c.get("phone", ""), c.get("company", ""),
+                    c.get("birthday", ""),
                     c.get("memo", "")[:30]
                 ))
                 self._tree_id_map[iid] = cid
@@ -301,13 +320,20 @@ class ContactPage(ctk.CTkFrame):
         elif self.orchestrator:
             contacts = self.orchestrator.contact_mgr.get_by_category(category)
             if search:
-                search = search.lower()
-                contacts = [
-                    c for c in contacts
-                    if search in c.name.lower()
-                    or search in c.company.lower()
-                    or search in c.memo.lower()
-                ]
+                s = search.lower().strip()
+                import re as _re
+                month_mm = None
+                m = _re.match(r"(\d{1,2})\s*월$", s)
+                if m:
+                    month_mm = f"{int(m.group(1)):02d}"
+
+                def _match(c):
+                    b = c.birthday or ""
+                    if (s in c.name.lower() or s in c.company.lower()
+                            or s in (c.memo or "").lower() or (s and s in b)):
+                        return True
+                    return bool(month_mm and b[:2] == month_mm)
+                contacts = [c for c in contacts if _match(c)]
             # 최근 추가 순 (최신이 위) → insert at index 0이 아닌 "end"로 역순 삽입
             for idx, contact in enumerate(reversed(contacts), 1):
                 cat_text = cat_label_map.get(contact.category, contact.category)
@@ -315,6 +341,7 @@ class ContactPage(ctk.CTkFrame):
                 iid = self.tree.insert("", "end", values=(
                     check_mark, idx, contact.name, cat_text,
                     contact.phone or "", contact.company or "",
+                    contact.birthday or "",
                     (contact.memo or "")[:30]
                 ))
                 self._tree_id_map[iid] = contact.id
@@ -546,6 +573,20 @@ class ContactPage(ctk.CTkFrame):
             category=self.category_var.get(),
             search=self.search_entry.get()
         )
+
+    def _filter_birthday_today(self):
+        """오늘 생일자 — 검색창에 오늘 날짜(MM-DD) 넣어 필터."""
+        from datetime import datetime
+        self.search_entry.delete(0, "end")
+        self.search_entry.insert(0, datetime.now().strftime("%m-%d"))
+        self._on_search()
+
+    def _filter_birthday_month(self):
+        """이번 달 생일자 — 검색창에 'N월' 넣어 필터."""
+        from datetime import datetime
+        self.search_entry.delete(0, "end")
+        self.search_entry.insert(0, f"{datetime.now().month}월")
+        self._on_search()
 
     def _add_contact(self):
         if self.api_client and self.api_client.is_logged_in:

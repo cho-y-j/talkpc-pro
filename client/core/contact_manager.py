@@ -188,14 +188,39 @@ class ContactManager:
         return None
 
     def search(self, query: str) -> list[Contact]:
-        """연락처 검색 (이름, 회사, 메모)"""
-        query = query.lower()
-        return [
-            c for c in self.contacts
-            if query in c.name.lower()
-            or query in c.company.lower()
-            or query in c.memo.lower()
-        ]
+        """연락처 검색 (이름, 회사, 메모, 생일).
+
+        생일 검색 지원:
+          - "03-15" / "03" 처럼 부분 문자열 매칭
+          - "3월" / "03월" → 해당 월(MM) 생일자
+        """
+        q = query.lower().strip()
+        # "N월" → 생일 월(MM)
+        month_mm = None
+        m = re.match(r"(\d{1,2})\s*월$", q)
+        if m:
+            month_mm = f"{int(m.group(1)):02d}"
+        result = []
+        for c in self.contacts:
+            bday = c.birthday or ""
+            if (q in c.name.lower() or q in c.company.lower()
+                    or q in c.memo.lower() or (q and q in bday)):
+                result.append(c)
+            elif month_mm and bday[:2] == month_mm:
+                result.append(c)
+        return result
+
+    def get_birthdays_today(self) -> list[Contact]:
+        """오늘 생일인 연락처"""
+        today = datetime.now().strftime("%m-%d")
+        return [c for c in self.contacts if (c.birthday or "") == today]
+
+    def get_birthdays_this_month(self) -> list[Contact]:
+        """이번 달 생일인 연락처 (일자 오름차순)"""
+        mm = datetime.now().strftime("%m")
+        result = [c for c in self.contacts if (c.birthday or "")[:2] == mm]
+        result.sort(key=lambda c: c.birthday)
+        return result
 
     def get_all(self) -> list[Contact]:
         """전체 연락처 조회"""

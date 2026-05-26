@@ -238,6 +238,28 @@ class Orchestrator:
         self._emit_log("디폴트 좌표 자동 계산 완료!")
         return {"success": True, "coordinates": coords}
 
+    def load_coordinates_auto_first(self) -> dict:
+        """좌표 = 자동계산(기본) + 고객 learned_positions.json(있으면 override).
+
+        ★ 상용화 기본 동작 — 고객은 셋업(8단계 클릭) 없이 자동계산 좌표로 동작.
+          learned_positions.json 은 고객이 '복구 마법사'로 직접 만든 경우에만
+          존재하며, 거기 든 항목만 자동계산 위에 덮어씀(부분 override 허용).
+          (개발자 좌표 파일은 빌드에 동봉하지 않음)
+        """
+        coords = self.window_ctrl.calculate_ui_coordinates()
+        path = self.base_dir / "config" / "learned_positions.json"
+        if path.exists():
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    learned = json.load(f)
+                for k, v in learned.items():
+                    if isinstance(v, dict) and ("x" in v or "x1" in v):
+                        coords[k] = v
+            except Exception:
+                pass
+        self.coordinates = coords
+        return coords
+
     def confirm_calibration(self) -> dict:
         """
         캘리브레이션 확인 - 사용자가 스크린샷을 확인한 후 호출
@@ -878,6 +900,12 @@ class Orchestrator:
                 continue
             key = name_raw.replace(" ", "")
             existing = by_name.get(key)
+            # 퍼지 폴백: 정규화 이름 포함관계 (OCR 미세차/부분일치 — 3자 이상만)
+            if existing is None and len(key) >= 3:
+                for nk, c in by_name.items():
+                    if key in nk or nk in key:
+                        existing = c
+                        break
             if existing:
                 if not existing.birthday:
                     existing.birthday = mmdd
@@ -977,7 +1005,7 @@ class Orchestrator:
             if sync_cfg.get("enabled", True):
                 sync = self._sync_birthday_to_contacts(
                     result.get("targets", []),
-                    create_new=sync_cfg.get("create_new", False),
+                    create_new=sync_cfg.get("create_new", True),
                 )
                 parts = []
                 if sync["updated"]:

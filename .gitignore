@@ -52,3 +52,10 @@ session.json
 Thumbs.db
 
 # Alembic 생성된 마이그레이션은 보존 — 단 빈 versions 디렉토리는 .gitkeep 으로 추적
+
+# 테스트 스크린샷 / 임시 캡처 (루트 레벨)
+/*.JPG
+/*.jpg
+/*.png
+# 사용자 커스텀 템플릿 (런타임 생성 — 추적 안 함)
+client/data/templates/custom.json

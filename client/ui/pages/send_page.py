@@ -1100,19 +1100,12 @@ class SendPage(ctk.CTkFrame):
             messagebox.showwarning("미지원", "이 기능은 로컬 모드에서만 지원됩니다.")
             return
 
-        # 메시지 입력란에 작성된 본문 또는 선택된 템플릿 사용
-        try:
-            template_content = self.msg_editor.get("1.0", "end").strip()
-        except Exception:
-            template_content = ""
-
+        # 문구 선택 — 저장된 템플릿 드롭다운 + 직접 입력 병행
+        dlg = BirthdaySendDialog(self, self.orchestrator)
+        self.wait_window(dlg)
+        template_content = (dlg.result or "").strip()
         if not template_content:
-            messagebox.showwarning(
-                "템플릿 필요",
-                "메시지 입력란에 발송할 내용을 작성해주세요.\n"
-                "예) 🎂 %이름%님 생일 축하드립니다!"
-            )
-            return
+            return  # 취소
 
         if "%이름%" not in template_content:
             cont = messagebox.askyesno(
@@ -1404,6 +1397,115 @@ class BirthdayScheduleDialog(ctk.CTkToplevel):
             self.destroy()
         except Exception as e:
             messagebox.showerror("오류", f"저장 실패:\n{e}")
+
+
+class BirthdaySendDialog(ctk.CTkToplevel):
+    """생일자 즉시발송 — 저장된 템플릿 선택(드롭다운) + 직접 입력 병행.
+
+    확정 시 self.result 에 본문 문자열, 취소 시 None.
+    """
+
+    def __init__(self, parent, orchestrator):
+        super().__init__(parent)
+        self.orchestrator = orchestrator
+        self.result = None
+        self._template_map = {}  # name → template 객체
+        self.title("🎂 생일자 즉시발송 - 문구 선택")
+        self.geometry("520x460")
+        self.configure(fg_color=T.BG_DARK)
+        self.transient(parent)
+        self.grab_set()
+        self._build()
+
+    def _build(self):
+        ctk.CTkLabel(
+            self, text="🎂 생일자 즉시발송",
+            font=(T.get_font_family(), 16, "bold"),
+            text_color=T.TEXT_PRIMARY,
+        ).pack(pady=(18, 2))
+        ctk.CTkLabel(
+            self,
+            text="저장된 템플릿을 선택하거나 직접 입력하세요. (%이름% 변수 사용 가능)",
+            font=(T.get_font_family(), 11),
+            text_color=T.TEXT_SECONDARY,
+        ).pack(pady=(0, 12))
+
+        # 템플릿 드롭다운
+        row = ctk.CTkFrame(self, fg_color=T.BG_CARD, corner_radius=8)
+        row.pack(fill="x", padx=24, pady=(0, 10))
+        ctk.CTkLabel(
+            row, text="템플릿:", font=(T.get_font_family(), 12, "bold"),
+            text_color=T.TEXT_PRIMARY,
+        ).pack(side="left", padx=14, pady=12)
+
+        names = ["(직접 입력)"]
+        if self.orchestrator:
+            try:
+                for t in self.orchestrator.message_engine.get_templates():
+                    names.append(t.name)
+                    self._template_map[t.name] = t
+            except Exception:
+                pass
+        self.tmpl_var = ctk.StringVar(value="(직접 입력)")
+        ctk.CTkOptionMenu(
+            row, values=names, variable=self.tmpl_var,
+            width=300, height=30, command=self._on_pick,
+            fg_color=T.BG_INPUT, button_color=T.BG_HOVER,
+            text_color=T.TEXT_PRIMARY,
+        ).pack(side="left", padx=4, pady=10)
+
+        # 본문 편집
+        ctk.CTkLabel(
+            self, text="발송 문구:", font=(T.get_font_family(), 12, "bold"),
+            text_color=T.TEXT_PRIMARY, anchor="w",
+        ).pack(fill="x", padx=24)
+        self.editor = ctk.CTkTextbox(
+            self, height=150, fg_color=T.BG_INPUT,
+            text_color=T.TEXT_PRIMARY, corner_radius=6,
+            font=(T.get_font_family(), T.FONT_SIZE_BODY),
+        )
+        self.editor.pack(fill="both", expand=True, padx=24, pady=(4, 10))
+        self.editor.insert("1.0", "🎂 %이름%님, 생일 진심으로 축하드립니다!")
+
+        btns = ctk.CTkFrame(self, fg_color="transparent")
+        btns.pack(fill="x", padx=24, pady=(0, 16))
+        ctk.CTkButton(
+            btns, text="취소", width=90, height=36,
+            fg_color=T.BG_HOVER, hover_color=T.BORDER,
+            text_color=T.TEXT_PRIMARY, corner_radius=6,
+            command=self._cancel,
+        ).pack(side="right", padx=(6, 0))
+        ctk.CTkButton(
+            btns, text="미리보기 후 발송 →", width=170, height=36,
+            fg_color=T.ACCENT, hover_color=T.ACCENT_HOVER,
+            text_color=T.TEXT_ON_ACCENT, corner_radius=6,
+            font=(T.get_font_family(), T.FONT_SIZE_BODY, "bold"),
+            command=self._confirm,
+        ).pack(side="right")
+
+    def _on_pick(self, name):
+        t = self._template_map.get(name)
+        if t is None:
+            return  # (직접 입력)
+        contents = getattr(t, "contents", None)
+        content = (contents[0] if contents else getattr(t, "content", "")) or ""
+        self.editor.delete("1.0", "end")
+        self.editor.insert("1.0", content)
+
+    def _confirm(self):
+        text = self.editor.get("1.0", "end").strip()
+        if not text:
+            messagebox.showwarning(
+                "문구 필요", "발송할 문구를 입력하거나 템플릿을 선택하세요.",
+                parent=self,
+            )
+            return
+        self.result = text
+        self.destroy()
+
+    def _cancel(self):
+        self.result = None
+        self.destroy()
 
 
 class ScheduleDialog(ctk.CTkToplevel):

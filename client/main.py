@@ -15,9 +15,17 @@ from tkinter import messagebox
 # ── 경로 ──
 
 def get_project_root():
-    """exe 실행 시 exe 옆 폴더, 스크립트 실행 시 스크립트 폴더."""
+    """쓰기 가능한 사용자 데이터 폴더.
+
+    frozen(exe) 실행 시 exe 옆 폴더를 쓰면 C:\\Program Files 설치에서
+    config/logs mkdir 이 PermissionError(WinError 5) 로 막힌다.
+    → %LOCALAPPDATA%\\TalkPC-Pro 로 두면 어디 설치하든 쓰기 가능.
+    스크립트(소스) 실행 시는 기존대로 스크립트 폴더.
+    """
     if getattr(sys, "frozen", False):
-        return Path(sys.executable).parent.resolve()
+        base = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "TalkPC-Pro"
+        base.mkdir(parents=True, exist_ok=True)
+        return base.resolve()
     return Path(__file__).parent.resolve()
 
 
@@ -55,11 +63,9 @@ def _seed_initial_files():
     dst = PROJECT_ROOT / "config" / "default_config.json"
     if src.exists() and not dst.exists():
         shutil.copy2(str(src), str(dst))
-    # learned_positions.json (빌드 시 dev 학습 좌표가 기본값)
-    src = BUNDLE_DIR / "config" / "learned_positions.json"
-    dst = PROJECT_ROOT / "config" / "learned_positions.json"
-    if src.exists() and not dst.exists():
-        shutil.copy2(str(src), str(dst))
+    # ★ learned_positions.json 은 더 이상 시드하지 않음 — 좌표는 자동계산이 기본.
+    #   (개발자 좌표를 고객이 상속하던 문제 제거. 고객이 복구 마법사를 돌리면
+    #    그때 생성되어 자동계산을 override)
     # data/ 시드 (없는 파일만)
     bundle_data = BUNDLE_DIR / "data"
     local_data = PROJECT_ROOT / "data"
@@ -72,6 +78,30 @@ def _seed_initial_files():
             if not d.exists():
                 d.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(str(s), str(d))
+
+
+def _set_dpi_awareness():
+    """프로세스 DPI 인식을 조기·결정적으로 설정 (Windows).
+
+    목적: 카톡 창 rect/캡처/클릭이 모두 동일한 물리픽셀 좌표계를 쓰게 해서
+    '고정 창 크기(420×700)'가 모든 PC에서 같은 의미가 되도록 → 자동계산
+    비율 좌표가 배율(125%/150%)에서도 흔들리지 않음.
+    레벨은 customtkinter 와 동일(Per-Monitor)로 맞춰 GUI 렌더 회귀 방지.
+    """
+    if sys.platform != "win32":
+        return "n/a"
+    import ctypes
+    try:
+        # Per-Monitor DPI Aware (customtkinter 와 동일 레벨)
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        return "per-monitor"
+    except Exception:
+        pass
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()  # System DPI Aware 폴백
+        return "system"
+    except Exception:
+        return "none"
 
 
 def _check_deps():
@@ -235,15 +265,46 @@ def launch_main_app(api, license_key: str):
 
 
 def main():
+    # GUI/창 생성 전에 DPI 인식 먼저 고정 (좌표 자동계산 일관성)
+    _dpi = _set_dpi_awareness()
+
     print("=" * 40)
     print("  TalkPC Pro v0.1.0")
     print("=" * 40)
     print(f"  frozen: {getattr(sys, 'frozen', False)}")
     print(f"  ROOT: {PROJECT_ROOT}")
+    print(f"  DPI awareness: {_dpi}")
     print("=" * 40)
+
+    try:
+        from core.kakao_win32 import _log
+        _log(f"[STARTUP] DPI awareness = {_dpi}")
+    except Exception:
+        pass
 
     _check_deps()
     _seed_initial_files()
+
+    # ── [진단용] PaddleOCR frozen 자가진단 — 로그인 전에 paddle 로딩 여부 기록 ──
+    #   결과는 %TEMP%/kakao_win32_debug.log 의 [STARTUP] 줄.
+    #   원인 확정 후 제거 가능 (OCR 정확도 로직은 미변경).
+    try:
+        from core.kakao_win32 import _log
+        from core import kakao_friends as _kf
+        _log(f"[STARTUP] frozen={getattr(sys, 'frozen', False)} "
+             f"paddle_available={_kf._PADDLE_AVAILABLE}")
+        if not _kf._PADDLE_AVAILABLE:
+            _log(f"[STARTUP] paddleocr import 실패: {_kf._PADDLE_IMPORT_ERROR}")
+        else:
+            _inst = _kf._get_paddle_ocr()
+            _log(f"[STARTUP] PaddleOCR 인스턴스: "
+                 f"{'OK(정상)' if _inst else 'None(폴백 OCR로 동작)'}")
+    except Exception as _e:
+        try:
+            from core.kakao_win32 import _log
+            _log(f"[STARTUP] paddle 자가진단 예외: {_e!r}")
+        except Exception:
+            pass
 
     # 시작 시 버전 체크 — 강제 업데이트면 즉시 종료
     from auth.updater import check_on_startup

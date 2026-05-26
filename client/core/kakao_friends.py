@@ -41,23 +41,40 @@ except ImportError:
 _PADDLE_OCR = None
 _PADDLE_AVAILABLE = False
 _PaddleOCRClass = None
+_PADDLE_IMPORT_ERROR = None  # 진단용 — import 실패 시 원인 문자열 보존
 try:
     from paddleocr import PaddleOCR as _PaddleOCRClass
     _PADDLE_AVAILABLE = True
-except Exception:
+except Exception as _e:
     # ImportError 외에도 FileNotFoundError 등 (PyInstaller 미수집 .py)
     # 폭넓게 catch — Paddle 못 쓰면 Tesseract 폴백.
-    pass
+    import traceback as _tb
+    _PADDLE_IMPORT_ERROR = f"{_e!r}\n{_tb.format_exc()}"
+
+
+def _diag(msg):
+    """OCR 진단 로그 — kakao_win32._log 재사용 (%TEMP%/kakao_win32_debug.log)."""
+    try:
+        from core.kakao_win32 import _log
+        _log(f"[OCR] {msg}")
+    except Exception:
+        pass
+
+
+_PADDLE_INIT_LOGGED = False  # 실패 로그를 매 행마다 도배하지 않도록 1회만
 
 
 def _get_paddle_ocr():
     """PaddleOCR 인스턴스 lazy 초기화 (모듈 레벨 캐싱).
     모델은 paddle_models/ 디렉토리에서 로드 (ASCII 경로 강제).
     """
-    global _PADDLE_OCR
+    global _PADDLE_OCR, _PADDLE_INIT_LOGGED
     if _PADDLE_OCR is not None:
         return _PADDLE_OCR
     if not _PADDLE_AVAILABLE:
+        if not _PADDLE_INIT_LOGGED:
+            _diag(f"paddleocr import 실패 → 폴백 OCR 사용. 원인: {_PADDLE_IMPORT_ERROR}")
+            _PADDLE_INIT_LOGGED = True
         return None
 
     import os
@@ -85,6 +102,9 @@ def _get_paddle_ocr():
 
     if base is None:
         # 모델 파일이 없으면 사용 불가 (paddle_models 디렉토리 누락)
+        if not _PADDLE_INIT_LOGGED:
+            _diag(f"paddle_models 못 찾음 → 폴백 OCR. 탐색 경로: {candidates}")
+            _PADDLE_INIT_LOGGED = True
         return None
 
     det_dir = os.path.join(base, "det", "Multilingual_PP-OCRv3_det_infer")
@@ -104,8 +124,15 @@ def _get_paddle_ocr():
             det_db_box_thresh=0.5,    # 기본 0.6 → 0.5 (박스 신뢰 임계 완화)
             det_db_unclip_ratio=2.0,  # 기본 1.5 → 2.0 (박스 여유 확대)
         )
+        _diag(f"PaddleOCR 초기화 성공 (모델: {base})")
         return _PADDLE_OCR
-    except Exception:
+    except Exception as e:
+        # ★ frozen exe 에서 paddle 런타임 실패의 핵심 원인이 여기 잡힘.
+        #   (DLL 로드 실패, paddle.base import 오류 등) — 전체 traceback 기록.
+        if not _PADDLE_INIT_LOGGED:
+            import traceback
+            _diag(f"PaddleOCR 초기화 실패 → 폴백 OCR. 원인: {e!r}\n{traceback.format_exc()}")
+            _PADDLE_INIT_LOGGED = True
         return None
 
 
@@ -199,6 +226,7 @@ class KakaoFriends:
     SECTION_FRIENDS = ["친구", "진구"]
     SECTION_CHANNEL = ["채널"]
     SECTION_UPDATED = ["업데이트한", "업데이트"]
+    SECTION_FAVORITE = ["즐겨찾는", "즐겨찾"]  # 즐겨찾는 친구 섹션 (친구 목록 위)
 
     def __init__(self, win32_engine, ocr_engine, screen_capture):
         """
@@ -693,9 +721,10 @@ class KakaoFriends:
             try:
                 text = self._paddle_ocr_row(paddle, image)
                 if text and re.search(r"[가-힣]", text):
+                    _diag(f"engine=paddle text={text!r}")
                     return text
-            except Exception:
-                pass
+            except Exception as e:
+                _diag(f"paddle_ocr_row 예외 → 폴백: {e!r}")
 
         # 2) 폴백: Windows OCR + Tesseract — 행 상단 + 5x 확대
         w, h = image.size
@@ -710,7 +739,9 @@ class KakaoFriends:
             try:
                 text = self._win_ocr(big)
                 if text and re.search(r"[가-힣]", text):
-                    return re.sub(r"\s+", " ", text).strip()
+                    cleaned = re.sub(r"\s+", " ", text).strip()
+                    _diag(f"engine=winocr text={cleaned!r}")
+                    return cleaned
             except Exception:
                 pass
 
@@ -740,7 +771,9 @@ class KakaoFriends:
         def hangul_count(s: str) -> int:
             return len(re.findall(r"[가-힣]", s))
 
-        return max(candidates, key=lambda t: (hangul_count(t), len(t)))
+        best = max(candidates, key=lambda t: (hangul_count(t), len(t)))
+        _diag(f"engine=tesseract text={best!r}")
+        return best
 
     def _paddle_ocr_row(self, paddle, image) -> str:
         """PaddleOCR 입력 전처리 + 5배 확대 → 인식률 대폭 향상.
@@ -914,6 +947,34 @@ class KakaoFriends:
 
         return ("unknown", None, text)
 
+    # 같은 줄 판정 임계 (paddle 5x 스케일 좌표 기준). 이름줄과 상태메시지줄
+    # 간격은 검증상 최소 ~85px → 50 이면 안전히 분리.
+    _NAME_LINE_TOL = 50
+
+    def _ocr_row_text_and_name(self, image) -> tuple:
+        """행 OCR → (row_text, display_name).
+
+        - row_text: 박스 전체를 합친 문자열 (섹션/생일 분류용 — 기존과 동일).
+        - display_name: paddle 박스 중 '최상단 줄'을 x(좌→우) 순으로 합친 표시이름.
+          상태메시지/생일날짜(아랫줄)는 제외, 라벨·복합이름은 그대로 보존(verbatim).
+        paddle 실패 시 (row_text=_ocr_single_line 폴백, display_name="").
+        """
+        try:
+            from core.paddle_ocr_helper import recognize_korean_text
+            res = recognize_korean_text(image)
+            boxes = res.get("boxes") or []
+            if res.get("engine") == "paddle" and boxes:
+                top_y = min(b["y"] for b in boxes)
+                line = [b for b in boxes
+                        if b["y"] - top_y <= self._NAME_LINE_TOL]
+                line.sort(key=lambda b: b["x"])
+                display_name = " ".join(b["text"] for b in line).strip()
+                return res.get("text", ""), display_name
+        except Exception:
+            pass
+        # 폴백: paddle 미작동 행 → 기존 단일라인 OCR, 표시이름은 분류기에 위임
+        return self._ocr_single_line(image), ""
+
     def navigate_step(self, prev_image=None,
                        wait_after: float = 0.25) -> dict:
         """
@@ -982,9 +1043,14 @@ class KakaoFriends:
 
         row_img = cur_image.crop((crop_x1, row_y1, crop_x2, row_y2))
 
-        # 다중 PSM OCR
-        row_text = self._ocr_single_line(row_img)
+        # OCR — paddle 박스 기반: row_text(전체, 분류용) + display_name(상단 줄=표시이름)
+        row_text, display_name = self._ocr_row_text_and_name(row_img)
         section, day, name = self._classify_row_text(row_text)
+        # ★ 친구·생일 행이면 화면에 보이는 표시이름(상단 줄 전체)을 그대로 사용.
+        #   라벨(고객 등)·복합이름 보존, 상태메시지/생일날짜(아랫줄)는 제외.
+        #   → 친구 저장 이름과 생일자 이름이 동일해져 생일 자동저장 매칭이 됨.
+        if section in ("friend", "birthday") and display_name:
+            name = display_name
 
         return {
             "moved": True,
@@ -1633,20 +1699,33 @@ class KakaoFriends:
                 "trail": list[dict],  # 거쳐온 모든 step 의 요약
             }
         """
+        # 카톡 친구탭 구조: 생일인 친구 → (안내문) → 즐겨찾는 친구 → 채널 → 친구 N
+        # ★ 섹션 헤더(즐겨찾는 친구/친구 N)는 ↓ 로 선택이 안 돼 OCR 에 안 잡힘.
+        #   행 스트림에서 신뢰할 마커는 "보세요"(생일끝 안내문) 와 "채널"(즐겨찾기↔친구
+        #   경계) 뿐. → 채널을 통과한 뒤 첫 이름부터 진짜 친구.
+        #   채널이 없는 계정 대비: 안내문 만난 시점에 전체화면 OCR 로 "즐겨찾는 친구 N"
+        #   수를 읽어 그만큼만 이름을 건너뜀(이중 안전장치).
         trail = []
         last_step = None
+        seen_notice = False     # 생일섹션 끝 안내문("…확인해 보세요") 통과
+        seen_channel = False    # "채널" 행 통과 (즐겨찾기/채널 → 친구 경계)
+        fav_to_skip = None      # 즐겨찾는 친구 수 (안내문 시점 1회 측정)
+        favs_skipped = 0
+        NOTICE_KW = ("확인", "보세요", "친구의 생일")
 
         for i in range(max_steps):
             step = self.navigate_step(prev_image=prev_image)
             prev_image = step["cur_image"]
             last_step = step
+            text = step["row_text"] or ""
+            section = step["section"]
 
             trail.append({
                 "step": i + 1,
-                "section": step["section"],
+                "section": section,
                 "day": step["day"],
                 "name": step["name"],
-                "row_text": step["row_text"][:40],
+                "row_text": text[:40],
             })
 
             if not step["moved"]:
@@ -1657,13 +1736,50 @@ class KakaoFriends:
                     "trail": trail,
                 }
 
-            if step["section"] == "friend":
-                return {
-                    "reached": True,
-                    "steps_taken": i + 1,
-                    "last_step": step,
-                    "trail": trail,
-                }
+            # 1) 생일 섹션 → 통과
+            if section == "birthday":
+                continue
+
+            # 2) 생일섹션 끝 안내문 → 즐겨찾기 수 측정(전체화면 OCR)
+            if any(k in text for k in NOTICE_KW):
+                if not seen_notice:
+                    seen_notice = True
+                    try:
+                        info = self.get_section_count(self.SECTION_FAVORITE)
+                        fav_to_skip = info["count"] if info else None
+                    except Exception:
+                        fav_to_skip = None
+                continue
+
+            # 3) 채널 행 → 즐겨찾기·채널 경계 통과 표시
+            if section == "channel" or "채널" in text:
+                seen_channel = True
+                continue
+
+            # 4) 이름 행 → 진짜 친구인지 판정
+            if section == "friend":
+                # 채널을 지났으면 무조건 친구 (즐겨찾기·채널 모두 통과)
+                if seen_channel:
+                    return {"reached": True, "steps_taken": i + 1,
+                            "last_step": step, "trail": trail}
+                # 안내문 자체가 없는 계정(즐겨찾기 없음) → 첫 이름이 친구
+                if not seen_notice:
+                    return {"reached": True, "steps_taken": i + 1,
+                            "last_step": step, "trail": trail}
+                # 즐겨찾기 수를 못 읽었으면 더 못 거르므로 완전수집 우선(첫 이름=친구)
+                if fav_to_skip is None:
+                    return {"reached": True, "steps_taken": i + 1,
+                            "last_step": step, "trail": trail}
+                # 즐겨찾기 수만큼 건너뛴 뒤면 친구
+                if favs_skipped >= fav_to_skip:
+                    return {"reached": True, "steps_taken": i + 1,
+                            "last_step": step, "trail": trail}
+                # 아직 즐겨찾기 구간 → 건너뜀
+                favs_skipped += 1
+                continue
+
+            # header / unknown → 통과
+            continue
 
         return {
             "reached": False,
@@ -1998,6 +2114,10 @@ class KakaoFriends:
                     f"UI 안내문 만남 → 종료. 감지: {cur_text[:80]!r}"
                 )
                 break
+
+            # 안전망: 채널 행이 섞여 들어오면 친구가 아니므로 건너뜀(종료 아님)
+            if step["section"] == "channel" or "채널" in cur_text:
+                continue
 
             # 가나다 순서 보정 제거 — 한 번 잘못된 OCR (예: 권→홍) 가
             # 후속 모든 권씨를 홍씨로 교체하는 부작용 (오류 전파).

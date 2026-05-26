@@ -319,16 +319,13 @@ class DashboardPage(ctk.CTkFrame):
         except Exception as e:
             self.add_log(f"카카오톡 배치 실패: {e}", "warning")
 
-        # 3. 좌표: 학습 파일 있으면 사용, 없으면 디폴트 자동 계산
-        positions_path = self.orchestrator.base_dir / "config" / "learned_positions.json"
-        if positions_path.exists():
-            with open(positions_path, "r", encoding="utf-8") as f:
-                self.orchestrator.coordinates = json.load(f)
-            self.add_log("학습 좌표 로드", "success")
+        # 3. 좌표: 자동계산 기본 + 고객 학습파일(있으면) override — 셋업 불필요
+        self.orchestrator.load_coordinates_auto_first()
+        path = self.orchestrator.base_dir / "config" / "learned_positions.json"
+        if path.exists():
+            self.add_log("좌표 자동 설정 완료 (+ 사용자 보정값 적용)", "success")
         else:
-            coords = self.orchestrator.window_ctrl.calculate_ui_coordinates()
-            self.orchestrator.coordinates = coords
-            self.add_log("디폴트 좌표 자동 계산 완료", "success")
+            self.add_log("좌표 자동 설정 완료 (셋업 불필요)", "success")
 
         # 4. 발송 준비
         result = self.orchestrator.confirm_calibration()
@@ -386,20 +383,16 @@ class DashboardPage(ctk.CTkFrame):
         if not self.orchestrator:
             return
 
-        positions_path = self.orchestrator.base_dir / "config" / "learned_positions.json"
-        use_learned = False
-
-        if positions_path.exists():
-            import json
-            with open(positions_path, "r", encoding="utf-8") as f:
-                positions = json.load(f)
-            self.add_log("저장된 학습 위치 로드 중...", "info")
-            self.orchestrator.coordinates = positions
-            use_learned = True
+        # 자동계산 기본 + 고객 학습파일(있으면) override
+        self.orchestrator.load_coordinates_auto_first()
+        path = self.orchestrator.base_dir / "config" / "learned_positions.json"
+        if path.exists():
+            self.add_log("좌표 자동 설정 (+ 사용자 보정값)", "info")
         else:
-            self.add_log("학습 파일 없음 - 디폴트 좌표 자동 계산 모드", "info")
+            self.add_log("좌표 자동 설정 (셋업 불필요)", "info")
 
-        self._do_initialize(use_learned)
+        # 좌표 이미 셋팅됨 → _do_initialize 가 재계산하지 않도록 use_learned=True
+        self._do_initialize(use_learned=True)
         self.refresh_stats()
 
     def _on_arrange_kakao(self):

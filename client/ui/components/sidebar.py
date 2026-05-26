@@ -9,10 +9,11 @@ from ui.theme import AppTheme as T
 class Sidebar(ctk.CTkFrame):
     """좌측 사이드바 네비게이션"""
 
-    def __init__(self, parent, on_navigate=None, **kwargs):
+    def __init__(self, parent, on_navigate=None, on_logout=None, **kwargs):
         super().__init__(parent, width=T.SIDEBAR_WIDTH, corner_radius=0, **kwargs)
         self.configure(fg_color=T.BG_SIDEBAR)
         self.on_navigate = on_navigate
+        self.on_logout = on_logout
         self.buttons = {}
         self.active_page = None
 
@@ -66,7 +67,16 @@ class Sidebar(ctk.CTkFrame):
         spacer = ctk.CTkFrame(self, fg_color="transparent")
         spacer.pack(fill="both", expand=True)
 
-        ctk.CTkFrame(self, fg_color=T.BORDER, height=1).pack(fill="x", padx=16, pady=(0, 10))
+        ctk.CTkFrame(self, fg_color=T.BORDER, height=1).pack(fill="x", padx=16, pady=(0, 8))
+
+        # 로그아웃
+        ctk.CTkButton(
+            self, text="🚪  로그아웃", font=(T.get_font_family(), 12),
+            anchor="w", height=36, corner_radius=8,
+            fg_color="transparent", text_color=T.TEXT_SECONDARY,
+            hover_color=T.BG_HOVER,
+            command=self._on_logout,
+        ).pack(fill="x", padx=12, pady=(0, 6))
 
         self.status_label = ctk.CTkLabel(
             self, text="● 대기 중",
@@ -85,6 +95,10 @@ class Sidebar(ctk.CTkFrame):
         self.set_active(page_id)
         if self.on_navigate:
             self.on_navigate(page_id)
+
+    def _on_logout(self):
+        if self.on_logout:
+            self.on_logout()
 
     def set_active(self, page_id: str):
         self.active_page = page_id

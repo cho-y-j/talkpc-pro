@@ -62,7 +62,7 @@ a = Analysis(
     binaries=paddle_binaries + ocr_binaries,
     datas=[
         ('config/default_config.json', 'config'),
-        ('config/learned_positions.json', 'config'),
+        # learned_positions.json 은 동봉하지 않음 — 좌표 자동계산이 기본(상용화).
         ('config/tessdata', 'config/tessdata'),
         ('data', 'data'),
         ('paddle_models', 'paddle_models'),

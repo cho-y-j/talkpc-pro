@@ -424,14 +424,23 @@ class WindowController:
                 "description": "보내기(전송) 버튼"
             },
             "image_send": {
-                "x": kx + int(kw * 0.481),
-                "y": ky + int(kh * 0.577),
-                "description": "이미지 전송 확인 버튼"
+                # '클립보드 이미지 전송' 모달의 전송 버튼(하단 중앙). 고정창에서
+                # 위치 결정적. 기존 0.577 은 Y 오류 → 수동학습 검증값 0.753 으로 정정.
+                "x": kx + int(kw * 0.498),
+                "y": ky + int(kh * 0.753),
+                "description": "이미지 전송 확인 버튼 (클립보드 이미지 전송 팝업)"
             },
             "back_button": {
                 "x": kx + int(kw * 0.957),
                 "y": ky + int(kh * 0.027),
                 "description": "뒤로가기/닫기 버튼 (우상단)"
+            },
+            "friends_tab_icon": {
+                # 좌측 사이드바 사람 아이콘. 검증: 수동학습값 역산 비율과 일치
+                # (창 420×700 기준 x≈0.095, y≈0.089). 친구탭 전환·OCR 자동화 핵심.
+                "x": kx + int(kw * 0.095),
+                "y": ky + int(kh * 0.089),
+                "description": "친구탭 사람 아이콘 (좌측 사이드바)"
             },
             "search_result_area": {
                 "x1": kx + 10,
