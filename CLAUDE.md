@@ -131,6 +131,84 @@ python main.py
 - [ ] M5: 알림톡 발송 (세종 + UI)
 - [ ] M6: 구독/결제 (만료형 라이선스)
 
-## 빌드
+## 빌드 정책 (v0.1.8 부터 확정)
 
-추후 작성. talk-local 의 `TalkPC-Local.spec` 기반으로 client/main.py 진입점 변경 + auth/ui 모듈 hiddenimports 추가.
+### 원칙: 로컬 빌드 우선, CI 는 보조
+v0.1.5~0.1.7 동안 CI 빌드 3연속 깨짐 — 원인 = `requirements.txt` 에 Cython
+미핀 + pip 가 매 빌드마다 최신 Cython 설치. v0.1.4 시점 이후 Cython 3.2.x
+릴리스로 paddleocr 2.7.3 의 컴파일된 `.pyd` 와 ABI 불일치(`TransitionMap
+size changed`). dev PC 에서 source mode 는 동작했지만 frozen exe 만 깨짐.
+
+→ **로컬에서 빌드 + 동작 검증 후 GitHub Release 에 수동 업로드** 가 가장 안전.
+CI 는 백업/이중 검증용. 모든 OCR/Paddle 의존 버전은 `requirements.txt` 에
+핀(고정) 필수.
+
+### 핀 필수 의존성 (절대 풀지 말 것)
+```
+Cython==3.0.10        # paddleocr 2.7.3 컴파일 확장과 ABI 호환
+paddlepaddle==2.6.2
+paddleocr==2.7.3
+numpy<2.0
+opencv-python-headless<4.10
+```
+
+### 로컬 빌드 절차
+```powershell
+# 1. PyInstaller (~7분)
+cd D:\talkpc\talkpc-pro\client
+pyinstaller TalkPC-Pro.spec --noconfirm
+# → D:\talkpc\talkpc-pro\client\dist\TalkPC-Pro\ (~730MB)
+
+# 2. 자가검증 — frozen exe 의 Paddle init 확인 (필수)
+$log = "$env:TEMP\kakao_win32_debug.log"; Remove-Item $log -EA SilentlyContinue
+Start-Process .\dist\TalkPC-Pro\TalkPC-Pro.exe; Start-Sleep 25
+Stop-Process -Name TalkPC-Pro -Force
+Get-Content $log -Tail 5
+# 기대 출력:
+#   [STARTUP] frozen=True paddle_available=True
+#   [OCR] PaddleOCR 초기화 성공
+#   [STARTUP] PaddleOCR 인스턴스: OK(정상)
+
+# 3. zip 패키징
+Compress-Archive -Path .\dist\TalkPC-Pro\* `
+  -DestinationPath .\dist\TalkPC-Pro-windows-x64.zip -Force
+
+# 4. Inno Setup (Setup.exe — ~3분)
+# 사전: winget install JRSoftware.InnoSetup -e (1회만)
+# .iss 의 #define MyAppVersion "0.1.x" 갱신
+$iscc = "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+cd D:\talkpc\talkpc-pro\installer
+& $iscc /O"C:\Temp\talkpc-installer" TalkPC-Pro.iss
+# D 드라이브 공간 부족하면 /O 로 C 로 우회 (Inno LZMA2 ultra64 = 큰 작업 영역)
+
+# 5. GitHub Release 업로드 (gh CLI)
+gh release create v0.1.x `
+  ".\client\dist\TalkPC-Pro-windows-x64.zip" `
+  "C:\Temp\talkpc-installer\TalkPC-Pro-Setup.exe" `
+  --target main --title "TalkPC Pro v0.1.x" --notes "..."
+# 또는 기존 release 에 --clobber 로 덮어쓰기:
+gh release upload v0.1.x <파일> --clobber
+```
+
+### Vercel /download 페이지 기대 파일명
+`landing/app/download/page.tsx` 가 GitHub `releases/latest/download/` 의
+고정 파일명을 직접 링크 — 표준 파일명 유지 필수:
+- `TalkPC-Pro-Setup.exe`
+- `TalkPC-Pro-windows-x64.zip`
+
+(버전 포함 파일명은 Vercel 페이지에서 못 찾음. 업로드 시 비버전 파일명으로.)
+
+### CI 빌드 (보조)
+- `.github/workflows/release.yml` — 태그 푸시 시 자동
+- Cython 핀 추가 후엔 정상 동작 가능. 단 로컬 검증 본을 우선으로 함.
+- CI artifacts 가 로컬 본을 덮어쓸 위험 — 같은 태그 작업 시 충돌 주의.
+
+## 로그/캡처 누적 방지 정책 (v0.1.8)
+
+상용 배포에서 무한 누적 디스크 점유 방지. **발송/수집 이력은 보존**:
+- `kakao_win32_debug.log`: 5MB 도달 시 `.old` 회전 (총 ~10MB 상한)
+- `logs/sync_rows/`: 친구 수집 시작 시 폴더 정리 (이번 run 만 유지)
+- `logs/verify_failed/`: 최근 50개 캡처만 유지
+- `logs/screenshots/`: 최근 50개만 유지
+- `logs/kakao_runs/*.json`: **유지** (발송/수집 이력)
+- `logs/session_*.json`: **유지** (발송 세션 결과)
