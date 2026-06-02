@@ -258,11 +258,10 @@ class KakaoFriends:
 
     def find_text_hits(self, image=None) -> list[TextHit]:
         """
-        카카오톡 창에서 모든 인식된 텍스트의 절대 좌표 리스트 반환
+        카카오톡 창에서 모든 인식된 텍스트의 절대 좌표 리스트 반환.
 
-        OCR 엔진 우선순위:
-          1) Tesseract (있으면 우선 — full-window 검증된 출력 형태 유지)
-          2) Paddle 폴백 (Tesseract 미설치 환경 — 일반 고객 PC)
+        Paddle 단일 엔진. 행 OCR 의 95% 파이프라인(preprocess_for_paddle 5x)
+        은 행 크롭 전용이라 전체창엔 부적절 → 전체창은 가벼운 2x 전처리.
 
         Returns:
             list[TextHit] - y 좌표 오름차순 정렬
@@ -276,39 +275,18 @@ class KakaoFriends:
             if image is None:
                 return []
 
-        # 1차: Tesseract (있으면)
-        if getattr(self.ocr, "available", False):
-            SCALE = 3
-            results = self.ocr.extract_text_with_data(image, preprocess=True)
-            hits = []
-            for r in results:
-                local_x = r["x"] // SCALE
-                local_y = r["y"] // SCALE
-                local_w = r["width"] // SCALE
-                local_h = r["height"] // SCALE
-                abs_x = rect["x"] + local_x
-                abs_y = rect["y"] + local_y
-                hits.append(TextHit(
-                    text=r["text"],
-                    abs_x=abs_x, abs_y=abs_y,
-                    width=local_w, height=local_h,
-                    confidence=r["confidence"],
-                ))
-            if hits:
-                hits.sort(key=lambda h: (h.y, h.x))
-                return hits
-
-        # 2차: Paddle 폴백 (Tesseract 미설치 PC)
         return self._find_text_hits_paddle(image, rect)
 
     def _find_text_hits_paddle(self, image, rect) -> list:
-        """Paddle 직접 호출 → TextHit 리스트.
+        """Paddle 전체창 OCR → TextHit 리스트.
 
-        preprocess_for_paddle 의 5x 확대를 역보정해 원본 좌표로 환산.
-        실패 시 빈 리스트 반환(폴백 트리거).
+        ★ preprocess_for_paddle 의 5x 는 행 크롭(약 200×50→1000×250) 에 튜닝됨.
+          전체창(420×700→2100×3500) 에 그대로 쓰면 detection 실패 → 전체창은
+          별도 가벼운 2x 전처리 (회색조 + 약한 대비) 사용.
+          행 OCR 의 95% 파이프라인(_paddle_ocr_row)은 영향 없음.
         """
         try:
-            from core.paddle_ocr_helper import get_paddle_ocr, preprocess_for_paddle
+            from core.paddle_ocr_helper import get_paddle_ocr
         except Exception:
             return []
         paddle = get_paddle_ocr()
@@ -319,8 +297,16 @@ class KakaoFriends:
         except ImportError:
             return []
 
-        pre = preprocess_for_paddle(image)
-        SCALE = 5  # preprocess_for_paddle 의 확대 배율
+        from PIL import Image as _PILImage, ImageEnhance
+        SCALE = 2
+        big = image.resize(
+            (image.width * SCALE, image.height * SCALE),
+            _PILImage.LANCZOS,
+        )
+        gray = big.convert("L")
+        contrasted = ImageEnhance.Contrast(gray).enhance(1.3)
+        pre = contrasted.convert("RGB")
+
         try:
             result = paddle.ocr(np.array(pre), cls=False)
         except Exception:

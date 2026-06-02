@@ -470,18 +470,14 @@ class KakaoSender:
 
             screenshot = self.capture.capture_region(x1, y1, x2, y2)
 
-            # Tesseract 우선 (있으면), 없으면 Paddle 폴백
+            # Paddle 단일 OCR
             text = ""
-            if getattr(self.ocr, "available", False):
-                text = self.ocr.extract_text(screenshot)
-            if not text:
-                try:
-                    from core.paddle_ocr_helper import recognize_korean_text
-                    pres = recognize_korean_text(screenshot)
-                    if pres.get("engine") == "paddle":
-                        text = pres.get("text", "")
-                except Exception:
-                    pass
+            try:
+                from core.paddle_ocr_helper import recognize_korean_text
+                pres = recognize_korean_text(screenshot)
+                text = pres.get("text", "")
+            except Exception:
+                pass
             _debug_log(f"팝업 감지 OCR: '{text[:80]}'")
 
             # 카카오��� 경고 키워드
