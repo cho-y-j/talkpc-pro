@@ -62,9 +62,21 @@ class ScreenCapture:
         )
 
     def save_screenshot(self, image: "Image.Image", name: str = None) -> str:
-        """스크린샷 파일로 저장"""
+        """스크린샷 파일로 저장. 누적 방지: 최근 50개만 유지."""
         if name is None:
             name = f"capture_{int(time.time())}"
         filepath = self.save_dir / f"{name}.png"
         image.save(str(filepath))
+        # 오래된 스크린샷 정리 (최근 50개 유지)
+        try:
+            olds = sorted(self.save_dir.glob("*.png"),
+                          key=lambda p: p.stat().st_mtime,
+                          reverse=True)
+            for old in olds[50:]:
+                try:
+                    old.unlink()
+                except Exception:
+                    pass
+        except Exception:
+            pass
         return str(filepath)

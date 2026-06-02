@@ -1,4 +1,8 @@
 # talk-local 기존 의존성 (검증된 95% Paddle 파이프라인 동일)
+# ★ Cython 핀: paddleocr 2.7.3 컴파일된 확장과 ABI 호환. 핀 없으면 CI 가
+#   최신 Cython(3.2+) 설치 → frozen exe 에서 TransitionMap size 불일치로
+#   paddleocr import 실패 (v0.1.5~0.1.7 에서 발생한 회귀).
+Cython==3.0.10
 paddlepaddle==2.6.2
 paddleocr==2.7.3
 numpy<2.0

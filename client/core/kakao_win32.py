@@ -26,10 +26,20 @@ except ImportError:
 user32 = ctypes.windll.user32
 
 _LOG_PATH = Path(tempfile.gettempdir()) / "kakao_win32_debug.log"
+_LOG_MAX_BYTES = 5 * 1024 * 1024  # 5 MB — 도달 시 .old 로 회전 (총 ~10MB 상한)
 
 
 def _log(msg):
     try:
+        # 크기 초과 시 회전 (디버그 로그 무한 누적 방지)
+        if _LOG_PATH.exists() and _LOG_PATH.stat().st_size > _LOG_MAX_BYTES:
+            backup = _LOG_PATH.with_suffix(".log.old")
+            try:
+                if backup.exists():
+                    backup.unlink()
+                _LOG_PATH.rename(backup)
+            except Exception:
+                pass
         with open(_LOG_PATH, "a", encoding="utf-8") as f:
             f.write(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
     except Exception:

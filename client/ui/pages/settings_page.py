@@ -1012,6 +1012,14 @@ class SettingsPage(ctk.CTkFrame):
             if not self.orchestrator.window_ctrl.find_kakao_window():
                 messagebox.showerror("오류", "카카오톡이 실행 중이 아닙니다.\n먼저 카카오톡 PC를 실행해주세요.")
                 return
+            # 학습 전 카톡 창을 표준 위치/크기(420×700, 우상단)로 강제 이동.
+            # 마법사가 기록하는 좌표는 절대좌표라 창 위치가 비표준이면
+            # 추후 카톡 창 이동 시 발송 좌표가 어긋남.
+            try:
+                self.orchestrator.window_ctrl.calculate_kakao_position()
+                self.orchestrator.window_ctrl.position_kakao_window()
+            except Exception:
+                pass
             self.orchestrator.window_ctrl.activate_kakao()
 
         wizard = PositionLearningWizard(self.winfo_toplevel())
@@ -1022,8 +1030,9 @@ class SettingsPage(ctk.CTkFrame):
             self._update_learn_status()
 
             if self.orchestrator:
-                # 머지된 파일에서 다시 읽어 기존 키 (friends_tab_icon 등) 포함
-                self.orchestrator.coordinates = self._load_learned_positions()
+                # 자동좌표 base + learned override 머지 — search_result_area 등
+                # 마법사 미커버 키(자동계산) 들이 빠지지 않도록 보존.
+                self.orchestrator.load_coordinates_auto_first()
                 self.orchestrator.confirm_calibration()
 
             messagebox.showinfo("학습 완료", f"{len(wizard.result)}개 위치 저장.\n발송 준비 완료!")

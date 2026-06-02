@@ -386,6 +386,7 @@ class KakaoSender:
 
             # 검증 실패 시 ROI 캡처를 logs/verify_failed/ 에 저장 — 사용자 디버깅용.
             # 실제로 어떤 화면이 잡혔는지 사후 확인 가능.
+            # 누적 방지: 최근 50개만 유지 (오래된 것부터 삭제).
             if not last_result.get("found"):
                 try:
                     from datetime import datetime
@@ -395,6 +396,15 @@ class KakaoSender:
                     safe_name = re.sub(r'[^\w가-힣]', '_', target_name)[:20]
                     fail_path = fail_dir / f"{ts}_{safe_name}.png"
                     screenshot.save(str(fail_path))
+                    # 오래된 캡처 정리
+                    try:
+                        olds = sorted(fail_dir.glob("*.png"),
+                                      key=lambda p: p.stat().st_mtime,
+                                      reverse=True)
+                        for old in olds[50:]:
+                            old.unlink(missing_ok=True)
+                    except Exception:
+                        pass
                 except Exception:
                     pass
 

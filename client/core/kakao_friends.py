@@ -2090,6 +2090,16 @@ class KakaoFriends:
             result["reason"] = "실제 저장 모드인데 contact_manager 가 없습니다."
             return result
 
+        # 디버그 PNG 디렉토리 정리 — 이번 run 의 행 이미지만 유지(무한 누적 방지)
+        try:
+            import shutil
+            from pathlib import Path as _P
+            _sync_rows_dir = _P("logs/sync_rows")
+            if _sync_rows_dir.exists():
+                shutil.rmtree(_sync_rows_dir, ignore_errors=True)
+        except Exception:
+            pass
+
         # 1) 맨 위로
         if not self.reset_to_top():
             result["reason"] = "맨 위 스크롤 실패"
