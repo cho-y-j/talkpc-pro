@@ -260,6 +260,10 @@ class KakaoFriends:
         """
         카카오톡 창에서 모든 인식된 텍스트의 절대 좌표 리스트 반환
 
+        OCR 엔진 우선순위:
+          1) Paddle (전 고객 PC 에 번들됨 — Tesseract 미설치 환경 대응)
+          2) Tesseract 폴백 (dev 환경 / paddle 실패 시)
+
         Returns:
             list[TextHit] - y 좌표 오름차순 정렬
         """
@@ -271,6 +275,15 @@ class KakaoFriends:
             image = self.capture_window()
             if image is None:
                 return []
+
+        # 1차: Paddle (Tesseract 없어도 동작)
+        paddle_hits = self._find_text_hits_paddle(image, rect)
+        if paddle_hits:
+            return paddle_hits
+
+        # 2차: Tesseract 폴백
+        if not getattr(self.ocr, "available", False):
+            return []
 
         # OCR (preprocess_image 가 3배 확대하므로 좌표 보정 필요)
         # extract_text_with_data 는 전처리 후 좌표를 반환하므로 1/3 스케일링
@@ -291,6 +304,60 @@ class KakaoFriends:
                 abs_x=abs_x, abs_y=abs_y,
                 width=local_w, height=local_h,
                 confidence=r["confidence"],
+            ))
+
+        hits.sort(key=lambda h: (h.y, h.x))
+        return hits
+
+    def _find_text_hits_paddle(self, image, rect) -> list:
+        """Paddle 직접 호출 → TextHit 리스트.
+
+        preprocess_for_paddle 의 5x 확대를 역보정해 원본 좌표로 환산.
+        실패 시 빈 리스트 반환(폴백 트리거).
+        """
+        try:
+            from core.paddle_ocr_helper import get_paddle_ocr, preprocess_for_paddle
+        except Exception:
+            return []
+        paddle = get_paddle_ocr()
+        if paddle is None:
+            return []
+        try:
+            import numpy as np
+        except ImportError:
+            return []
+
+        pre = preprocess_for_paddle(image)
+        SCALE = 5  # preprocess_for_paddle 의 확대 배율
+        try:
+            result = paddle.ocr(np.array(pre), cls=False)
+        except Exception:
+            return []
+        if not result or not result[0]:
+            return []
+
+        hits = []
+        for entry in result[0]:
+            try:
+                box, (text, conf) = entry
+            except (ValueError, TypeError):
+                continue
+            text = (text or "").strip()
+            if not text or conf < 0.5:
+                continue
+            xs = [pt[0] for pt in box]
+            ys = [pt[1] for pt in box]
+            x_min = int(min(xs)) // SCALE
+            y_min = int(min(ys)) // SCALE
+            w = (int(max(xs)) - int(min(xs))) // SCALE
+            h = (int(max(ys)) - int(min(ys))) // SCALE
+            hits.append(TextHit(
+                text=text,
+                abs_x=rect["x"] + x_min,
+                abs_y=rect["y"] + y_min,
+                width=max(w, 1),
+                height=max(h, 1),
+                confidence=int(conf * 100),
             ))
 
         hits.sort(key=lambda h: (h.y, h.x))
