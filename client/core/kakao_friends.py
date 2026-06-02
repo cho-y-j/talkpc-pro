@@ -261,8 +261,8 @@ class KakaoFriends:
         카카오톡 창에서 모든 인식된 텍스트의 절대 좌표 리스트 반환
 
         OCR 엔진 우선순위:
-          1) Paddle (전 고객 PC 에 번들됨 — Tesseract 미설치 환경 대응)
-          2) Tesseract 폴백 (dev 환경 / paddle 실패 시)
+          1) Tesseract (있으면 우선 — full-window 검증된 출력 형태 유지)
+          2) Paddle 폴백 (Tesseract 미설치 환경 — 일반 고객 PC)
 
         Returns:
             list[TextHit] - y 좌표 오름차순 정렬
@@ -276,38 +276,30 @@ class KakaoFriends:
             if image is None:
                 return []
 
-        # 1차: Paddle (Tesseract 없어도 동작)
-        paddle_hits = self._find_text_hits_paddle(image, rect)
-        if paddle_hits:
-            return paddle_hits
+        # 1차: Tesseract (있으면)
+        if getattr(self.ocr, "available", False):
+            SCALE = 3
+            results = self.ocr.extract_text_with_data(image, preprocess=True)
+            hits = []
+            for r in results:
+                local_x = r["x"] // SCALE
+                local_y = r["y"] // SCALE
+                local_w = r["width"] // SCALE
+                local_h = r["height"] // SCALE
+                abs_x = rect["x"] + local_x
+                abs_y = rect["y"] + local_y
+                hits.append(TextHit(
+                    text=r["text"],
+                    abs_x=abs_x, abs_y=abs_y,
+                    width=local_w, height=local_h,
+                    confidence=r["confidence"],
+                ))
+            if hits:
+                hits.sort(key=lambda h: (h.y, h.x))
+                return hits
 
-        # 2차: Tesseract 폴백
-        if not getattr(self.ocr, "available", False):
-            return []
-
-        # OCR (preprocess_image 가 3배 확대하므로 좌표 보정 필요)
-        # extract_text_with_data 는 전처리 후 좌표를 반환하므로 1/3 스케일링
-        SCALE = 3
-        results = self.ocr.extract_text_with_data(image, preprocess=True)
-
-        hits = []
-        for r in results:
-            # 전처리 좌표 → 원본 좌표 → 절대 좌표
-            local_x = r["x"] // SCALE
-            local_y = r["y"] // SCALE
-            local_w = r["width"] // SCALE
-            local_h = r["height"] // SCALE
-            abs_x = rect["x"] + local_x
-            abs_y = rect["y"] + local_y
-            hits.append(TextHit(
-                text=r["text"],
-                abs_x=abs_x, abs_y=abs_y,
-                width=local_w, height=local_h,
-                confidence=r["confidence"],
-            ))
-
-        hits.sort(key=lambda h: (h.y, h.x))
-        return hits
+        # 2차: Paddle 폴백 (Tesseract 미설치 PC)
+        return self._find_text_hits_paddle(image, rect)
 
     def _find_text_hits_paddle(self, image, rect) -> list:
         """Paddle 직접 호출 → TextHit 리스트.
