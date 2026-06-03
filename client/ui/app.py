@@ -6,6 +6,7 @@ App - 로컬 전용 메인 애플리케이션
 import customtkinter as ctk
 from ui.theme import AppTheme as T
 from ui.components.sidebar import Sidebar
+from ui.components.busy_bar import BusyBar
 from ui.pages.dashboard_page import DashboardPage
 from ui.pages.contact_page import ContactPage
 from ui.pages.message_page import MessagePage
@@ -32,16 +33,25 @@ class App(ctk.CTk):
 
         self.grid_columnconfigure(0, weight=0)
         self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(0, weight=1)
+        # row 0 = busy bar (고정 높이), row 1 = 메인 (사이드바 + 콘텐츠)
+        self.grid_rowconfigure(0, weight=0)
+        self.grid_rowconfigure(1, weight=1)
+
+        # 활동 표시줄 (최상단 — 사이드바·콘텐츠 모두 가로질러)
+        self.busy_bar = BusyBar(
+            self,
+            on_cancel=lambda: self.orchestrator.stop_sending() if self.orchestrator else None,
+        )
+        self.busy_bar.grid(row=0, column=0, columnspan=2, sticky="ew")
 
         # 사이드바
         self.sidebar = Sidebar(self, on_navigate=self._navigate,
                                 on_logout=self._logout)
-        self.sidebar.grid(row=0, column=0, sticky="ns")
+        self.sidebar.grid(row=1, column=0, sticky="ns")
 
         # 메인 콘텐츠
         self.content_frame = ctk.CTkFrame(self, fg_color=T.BG_DARK, corner_radius=0)
-        self.content_frame.grid(row=0, column=1, sticky="nsew")
+        self.content_frame.grid(row=1, column=1, sticky="nsew")
         self.content_frame.grid_columnconfigure(0, weight=1)
         self.content_frame.grid_rowconfigure(0, weight=1)
 
@@ -67,10 +77,11 @@ class App(ctk.CTk):
         for page in self.pages.values():
             page.grid(row=0, column=0, sticky="nsew")
 
-        # 오케스트레이터 콜백
+        # 오케스트레이터 콜백 — 사이드바 상태 + 활동 표시줄 동시 갱신
         if self.orchestrator:
             self.orchestrator.on_state_change(self._on_orch_state)
             self.orchestrator.on_log(self._on_orch_log)
+            self.orchestrator.on_progress(self.busy_bar.on_progress)
 
         self._navigate("dashboard")
         self.after(500, self._auto_init)
@@ -104,12 +115,16 @@ class App(ctk.CTk):
             }
             text, color = state_map.get(state, ("● 알 수 없음", T.TEXT_MUTED))
             self.sidebar.update_status(text, color)
+            # 활동 표시줄 동시 갱신
+            self.busy_bar.on_state(state)
         self.after(0, _update)
 
     def _on_orch_log(self, message, level):
         def _update():
             if "dashboard" in self.pages:
                 self.pages["dashboard"].add_log(message, level)
+            # 활동 표시줄 메시지 갱신 — 사용자가 작업 진행 중인지 즉시 체감
+            self.busy_bar.on_log(message, level)
         self.after(0, _update)
 
     def _auto_init(self):
