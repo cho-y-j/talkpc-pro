@@ -45,6 +45,15 @@ async function request<T>(
       const j = await res.json();
       detail = j.detail || JSON.stringify(j);
     } catch {}
+    // 401 = 토큰 만료/무효 → 자동 로그아웃 + 로그인으로 보냄.
+    // 안 그러면 만료된 토큰이 localStorage 에 남아 모든 API 호출이 막힘.
+    if (res.status === 401 && typeof window !== "undefined") {
+      clearToken();
+      // /login 으로 리다이렉트 (현재 페이지가 /login 이면 루프 방지).
+      if (!window.location.pathname.startsWith("/login")) {
+        window.location.href = "/login";
+      }
+    }
     throw new ApiError(res.status, detail);
   }
   return res.status === 204 ? (undefined as T) : await res.json();
