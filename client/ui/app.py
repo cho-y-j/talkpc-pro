@@ -20,9 +20,11 @@ class App(ctk.CTk):
         super().__init__()
         self.orchestrator = orchestrator
 
-        self.title("TalkPC Local")
-        self.geometry("1200x1000")
-        self.minsize(1000, 850)
+        self.title("TalkPC Pro")
+        # 1080p(1920×1080) PC 작업영역 ~1040px, 노트북 1366×768 까지 fit.
+        # 발송 페이지 로그 영역은 상단 잡음(이중 헤더 등) 제거로 확보.
+        self.geometry("1200x900")
+        self.minsize(950, 700)
         self.configure(fg_color=T.BG_DARK)
 
         ctk.set_appearance_mode("dark")

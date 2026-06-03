@@ -32,14 +32,17 @@ class ContactPage(ctk.CTkFrame):
             text_color=T.TEXT_PRIMARY
         ).pack(side="left")
 
-        # 버튼들
+        # 버튼들 — 좌측→우측 그룹: [+ 추가] [카톡친구추가] | [엑셀: 샘플/가져오기/내보내기]
+        # 오른쪽부터 pack 되므로 역순으로 배치.
+
+        # ── 엑셀 그룹 (오른쪽 끝) ──
         ctk.CTkButton(
             header, text="📥 내보내기", width=90,
             font=(T.get_font_family(), T.FONT_SIZE_SMALL),
             fg_color=T.BG_HOVER, hover_color=T.BORDER,
             text_color=T.TEXT_PRIMARY, height=30, corner_radius=6,
             command=self._export_excel
-        ).pack(side="right", padx=(8, 0))
+        ).pack(side="right", padx=(4, 0))
 
         ctk.CTkButton(
             header, text="📤 가져오기", width=90,
@@ -47,24 +50,27 @@ class ContactPage(ctk.CTkFrame):
             fg_color=T.BG_HOVER, hover_color=T.BORDER,
             text_color=T.TEXT_PRIMARY, height=30, corner_radius=6,
             command=self._import_excel
-        ).pack(side="right", padx=(8, 0))
+        ).pack(side="right", padx=(4, 0))
 
+        # 샘플 다운은 가져오기 바로 옆 (엑셀 작업 그룹)
         ctk.CTkButton(
-            header, text="🔄 카톡친구", width=100,
+            header, text="📋 샘플", width=70,
             font=(T.get_font_family(), T.FONT_SIZE_SMALL),
-            fg_color="#27ae60", hover_color="#229954",
-            text_color=T.TEXT_PRIMARY, height=30, corner_radius=6,
-            command=self._sync_kakao_friends
-        ).pack(side="right", padx=(8, 0))
-
-        ctk.CTkButton(
-            header, text="📋 샘플 다운", width=90,
-            font=(T.get_font_family(), T.FONT_SIZE_SMALL),
-            fg_color="#1a5276", hover_color="#2471a3",
-            text_color=T.TEXT_PRIMARY, height=30, corner_radius=6,
+            fg_color=T.BG_HOVER, hover_color=T.BORDER,
+            text_color=T.TEXT_SECONDARY, height=30, corner_radius=6,
             command=self._download_sample
-        ).pack(side="right", padx=(8, 0))
+        ).pack(side="right", padx=(4, 12))
 
+        # ── 카톡친구 수집 (엑셀 그룹과 분리) ──
+        ctk.CTkButton(
+            header, text="🔄 카톡친구추가", width=120,
+            font=(T.get_font_family(), T.FONT_SIZE_SMALL, "bold"),
+            fg_color=T.ACTION_POSITIVE, hover_color=T.ACTION_POSITIVE_HOVER,
+            text_color=T.TEXT_ON_DARK, height=30, corner_radius=6,
+            command=self._sync_kakao_friends
+        ).pack(side="right", padx=(4, 4))
+
+        # ── 직접 추가 ──
         ctk.CTkButton(
             header, text="+ 추가", width=80,
             font=(T.get_font_family(), T.FONT_SIZE_SMALL, "bold"),
@@ -134,6 +140,10 @@ class ContactPage(ctk.CTkFrame):
                          background="#2d333b", foreground="#e6edf3",
                          font=(T.get_font_family(), 10, "bold"),
                          borderwidth=0)
+        # 헤더 hover/active 시 흰 배경으로 가서 텍스트 안 보이는 사고 — 명시 매핑.
+        style.map("Contact.Treeview.Heading",
+                   background=[("active", "#3b424a"), ("pressed", "#1f6feb")],
+                   foreground=[("active", "#f0f6fc"), ("pressed", "#ffffff")])
         style.map("Contact.Treeview",
                    background=[("selected", "#2f81f7")],
                    foreground=[("selected", "#ffffff")])
@@ -148,16 +158,26 @@ class ContactPage(ctk.CTkFrame):
             tree_frame, columns=columns, show="headings",
             selectmode="extended", style="Contact.Treeview"
         )
-        # 헤더 — check 헤더 클릭 시 전체선택 토글
+        # 헤더 — check 클릭 = 전체선택 토글, 나머지 = 정렬 토글(엑셀 필터처럼).
+        # 화살표(▲/▼)는 현재 정렬 컬럼에만 표시.
         self.tree.heading("check", text="☐", anchor="center",
                           command=self._toggle_all_check)
         self.tree.heading("no", text="#", anchor="center")
-        self.tree.heading("name", text="이름", anchor="w")
-        self.tree.heading("category", text="카테고리", anchor="w")
-        self.tree.heading("phone", text="전화번호", anchor="w")
-        self.tree.heading("company", text="회사", anchor="w")
-        self.tree.heading("birthday", text="🎂 생일", anchor="center")
-        self.tree.heading("memo", text="메모", anchor="w")
+        self._sort_state = {}  # col → True(reverse) / False(asc)
+        self._sort_col = None
+        # 컬럼명 → 헤더 라벨 (정렬 화살표 붙일 base)
+        self._sort_labels = {
+            "name": "이름",
+            "category": "카테고리",
+            "phone": "전화번호",
+            "company": "회사",
+            "birthday": "🎂 생일",
+            "memo": "메모",
+        }
+        for col, label in self._sort_labels.items():
+            anchor = "center" if col == "birthday" else "w"
+            self.tree.heading(col, text=label + "  ⇅", anchor=anchor,
+                              command=lambda c=col: self._sort_by_column(c))
 
         self.tree.column("check", width=36, minwidth=30, stretch=False, anchor="center")
         self.tree.column("no", width=40, minwidth=35, stretch=False, anchor="center")
@@ -346,6 +366,51 @@ class ContactPage(ctk.CTkFrame):
                 ))
                 self._tree_id_map[iid] = contact.id
             self.count_label.configure(text=f"총 {len(contacts)}명")
+
+        # 정렬 상태가 있으면 새로고침 후 재적용 (필터/검색 후에도 정렬 유지)
+        if self._sort_col:
+            self._apply_sort(self._sort_col, self._sort_state.get(self._sort_col, False))
+
+    # -- Treeview 정렬 (엑셀 필터 스타일) --
+
+    def _sort_by_column(self, col: str):
+        """헤더 클릭 — 컬럼 정렬 토글. 처음 ↑, 한번더 ↓."""
+        reverse = self._sort_state.get(col, False)
+        # 같은 컬럼 재클릭이면 방향 반대로
+        if self._sort_col == col:
+            reverse = not reverse
+        self._sort_state[col] = reverse
+        self._sort_col = col
+        self._apply_sort(col, reverse)
+
+    def _apply_sort(self, col: str, reverse: bool):
+        """실제 정렬 + 헤더 라벨에 화살표 표시."""
+        # 다른 컬럼 헤더에 붙은 화살표 제거 (⇅ 로 복귀)
+        for c, label in self._sort_labels.items():
+            if c == col:
+                arrow = "  ▼" if reverse else "  ▲"
+                self.tree.heading(c, text=label + arrow)
+            else:
+                self.tree.heading(c, text=label + "  ⇅")
+        # 정렬 키 — 숫자처럼 보이면 숫자로, 아니면 텍스트로 (대소문자 무시)
+        items = [(self.tree.set(item, col), item) for item in self.tree.get_children("")]
+
+        def _key(pair):
+            v = (pair[0] or "").strip()
+            if not v:
+                return (1, "")  # 빈 값은 항상 끝
+            # 숫자/날짜 패턴 (예: "03-15", "010-1234-5678") 도 문자열 비교가 자연스러움
+            return (0, v.lower())
+        items.sort(key=_key, reverse=reverse)
+        for index, (_, item) in enumerate(items):
+            self.tree.move(item, "", index)
+
+        # No 컬럼 번호 재부여 (정렬 후 1,2,3 새로 매김)
+        for index, item in enumerate(self.tree.get_children(""), 1):
+            vals = list(self.tree.item(item, "values"))
+            if len(vals) > 1:
+                vals[1] = index
+                self.tree.item(item, values=vals)
 
     # -- Treeview 이벤트 --
 

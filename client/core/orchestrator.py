@@ -70,6 +70,11 @@ class Orchestrator:
         self.sejong_sender: Optional[SejongSender] = None
         self.coordinates: dict = {}
         self.scheduler = Scheduler(str(self.base_dir / "data" / "schedules.json"), self)
+        # 생일 발송 중복 방지 — 3가지 경로(수동/카톡OCR/JSON) 공통.
+        from core.birthday_sent_log import BirthdaySentLog
+        self.birthday_sent_log = BirthdaySentLog(
+            str(self.base_dir / "data" / "birthday_sent.json")
+        )
 
         # 발송 방법: "kakao_bot" | "alimtalk" | "sms"
         self.send_method = "kakao_bot"
@@ -982,6 +987,9 @@ class Orchestrator:
                 self._emit_log("sender 자동 초기화 완료 (스케줄러 발송)")
             except Exception as e:
                 self._emit_log(f"sender 자동 초기화 실패: {e}", "error")
+        # 중복방지 로그를 sender 에 부착 — kakao_friends 가 self.sender._birthday_sent_log 로 접근
+        if self.sender is not None:
+            self.sender._birthday_sent_log = self.birthday_sent_log
 
         self._emit_state(OrchestratorState.SENDING)
         self._emit_log("=" * 40)

@@ -40,8 +40,8 @@ class SendPage(ctk.CTkFrame):
         ctk.CTkButton(
             header, text="🎂 생일자 즉시발송", width=140,
             font=(T.get_font_family(), T.FONT_SIZE_SMALL, "bold"),
-            fg_color="#e67e22", hover_color="#d35400",
-            text_color="white", height=32, corner_radius=6,
+            fg_color=T.ACTION_FEATURE, hover_color=T.ACTION_FEATURE_HOVER,
+            text_color=T.TEXT_ON_DARK, height=32, corner_radius=6,
             command=self._send_kakao_birthday
         ).pack(side="right")
 
@@ -49,51 +49,25 @@ class SendPage(ctk.CTkFrame):
         ctk.CTkButton(
             header, text="📅 매일 생일자 자동", width=130,
             font=(T.get_font_family(), T.FONT_SIZE_SMALL),
-            fg_color="#8e44ad", hover_color="#7d3c98",
-            text_color="white", height=32, corner_radius=6,
+            fg_color=T.ACTION_SCHEDULE, hover_color=T.ACTION_SCHEDULE_HOVER,
+            text_color=T.TEXT_ON_DARK, height=32, corner_radius=6,
             command=self._open_birthday_schedule_dialog
         ).pack(side="right", padx=(0, 6))
 
-        # -- 발송 방법 (카카오톡 봇 전용) --
+        # 발송 방법(카카오톡 봇 단일) — 별도 카드 UI 제거, 내부 변수만 유지.
+        # 이전: 카카오톡봇 카드(72px) + 상태바(28px) + 권장시간안내(24px) = ~124px
+        #       사용자 피드백 "무료/상단 잡음 제거 → 로그 영역 확보"로 모두 압축.
         self.send_method_var = ctk.StringVar(value="카카오톡 봇")
         self._selected_method_key = "카카오톡 봇"
-
-        method_frame = ctk.CTkFrame(self, fg_color="transparent", height=72)
-        method_frame.pack(fill="x", padx=24, pady=(0, 4))
-        method_frame.pack_propagate(False)
-
         self._method_cards = {}
-        card_btn = ctk.CTkButton(
-            method_frame, text="💬\n카카오톡 봇\n무료",
-            width=140, height=60,
-            font=(T.get_font_family(), 10, "bold"),
-            fg_color=T.BG_HOVER, hover_color=T.BG_HOVER,
-            text_color=T.TEXT_PRIMARY,
-            border_width=2,
-            border_color="#2ea043",
-            corner_radius=10,
-            command=lambda: None
-        )
-        card_btn.pack(side="left", padx=(0, 8))
-        self._method_cards["카카오톡 봇"] = (card_btn, "#2ea043")
 
-        # 발송 방법 상태 바
-        self.method_status_label = ctk.CTkLabel(
-            self, text="📨 카카오톡 봇으로 메시지 보내기 (무료)",
-            font=(T.get_font_family(), 11, "bold"),
-            text_color=T.TEXT_SECONDARY,
-            fg_color=T.BG_CARD, corner_radius=6, height=28
-        )
-        self.method_status_label.pack(fill="x", padx=24, pady=(0, 4))
-
-        # 권장 발송 시간대 안내 (차단 회피용 가이드 — 강제 X)
+        # 권장 시간 안내 — 한 줄 압축 (제거 대신 헤더 옆에 옅게 표시 검토 가능)
         ctk.CTkLabel(
             self,
-            text="💡 권장 발송 시간: 09:00 ~ 22:00  ·  심야 시간대 발송은 봇 의심도가 높아질 수 있어요",
-            font=(T.get_font_family(), 10),
-            text_color="#f0b90b",
-            fg_color="#3a2818", corner_radius=6, height=24,
-        ).pack(fill="x", padx=24, pady=(0, 8))
+            text="💡 권장 발송 09~22시 · 심야는 봇 의심도 ↑",
+            font=(T.get_font_family(), 9),
+            text_color="#8b949e",
+        ).pack(fill="x", padx=24, pady=(0, 4))
 
         # -- 상단: 대상 선택 (좌) + 메시지 작성 (우) --
         top_frame = ctk.CTkFrame(self, fg_color="transparent", height=350)

@@ -93,13 +93,14 @@ class MessagePage(ctk.CTkFrame):
             command=self._save_template
         ).pack(side="right")
 
+        # 템플릿 삭제 — 잘 안 보이던 거 가시화 (라벨 + 빨강 + 폭 확대)
         ctk.CTkButton(
-            editor_header, text="🗑", width=30, height=28,
-            font=(T.get_font_family(), 12),
-            fg_color=T.BG_HOVER, hover_color=T.ERROR,
-            text_color=T.TEXT_MUTED, corner_radius=6,
+            editor_header, text="🗑 삭제", width=72, height=28,
+            font=(T.get_font_family(), T.FONT_SIZE_SMALL, "bold"),
+            fg_color=T.ACTION_DANGER, hover_color=T.ACTION_DANGER_HOVER,
+            text_color=T.TEXT_ON_DARK, corner_radius=6,
             command=self._delete_template
-        ).pack(side="right", padx=(0, 4))
+        ).pack(side="right", padx=(0, 6))
 
         # 템플릿 이름
         self.name_entry = ctk.CTkEntry(

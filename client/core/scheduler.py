@@ -240,6 +240,15 @@ class Scheduler:
             )
             self.orchestrator.start_sending()
 
+            # 생일 Job 이면 발송 큐 진입 시점에 중복방지 로그에 기록 — 같은 날
+            # 다른 경로(수동/카톡OCR) 가 더 못 보내게. 실제 send_to_contact 실패
+            # 시에도 마킹 유지(과송신 위험 < 미송신 위험 — 사용자 수동 재전송 가능).
+            if job.job_type == "birthday":
+                sent_log = getattr(self.orchestrator, "birthday_sent_log", None)
+                if sent_log is not None:
+                    for c in contacts:
+                        sent_log.mark_sent(c.name)
+
             job.status = "completed"
             job.result_summary = f"{len(contacts)}명 발송 시작"
 
@@ -361,6 +370,19 @@ class Scheduler:
         today_mmdd = datetime.now().strftime("%m-%d")
         contacts = self.orchestrator.contact_mgr.get_all()
         birthday_contacts = [c for c in contacts if getattr(c, 'birthday', '') == today_mmdd]
+
+        # ★ 중복방지 — 이미 오늘 다른 경로(수동/카톡OCR)로 발송된 사람 제외.
+        sent_log = getattr(self.orchestrator, "birthday_sent_log", None)
+        if sent_log is not None:
+            before = len(birthday_contacts)
+            birthday_contacts = [
+                c for c in birthday_contacts if not sent_log.is_sent_today(c.name)
+            ]
+            skipped = before - len(birthday_contacts)
+            if skipped:
+                self.orchestrator._emit_log(
+                    f"📋 JSON 자동발송: 오늘 이미 발송된 {skipped}명 자동 제외"
+                )
 
         if birthday_contacts:
             self.add_job(

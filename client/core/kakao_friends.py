@@ -2189,6 +2189,9 @@ class KakaoFriends:
             })
             result["skipped"] += 1
 
+        # 중복 방지 로그 (수동/카톡OCR/JSON 3 경로 공통)
+        sent_log = getattr(self.sender, "_birthday_sent_log", None) if self.sender else None
+
         # today 명단 — 정확히 N번 발송하고 종료. 끝없이 찾기 없음.
         for nth, target_row in enumerate(today_rows):
             if result["sent"] >= daily_limit:
@@ -2199,6 +2202,14 @@ class KakaoFriends:
                 "step": nth, "name": target_row["name"], "day": "today",
                 "row_text": target_row["row_text"][:60], "action": "pending",
             }
+
+            # ★ 같은 날 같은 사람한테 이미 발송됐으면 skip — 3 경로 공통 로그.
+            if sent_log is not None and sent_log.is_sent_today(target["name"]):
+                target["action"] = "skip_already_sent_today"
+                result["targets"].append(target)
+                result["skipped"] += 1
+                _diag(f"send_birthday_messages(send): nth={nth} '{target['name']}' 오늘 이미 발송됨 — skip")
+                continue
 
             # nth 번째 today 생일자에 selection 박기
             pos_ok = self._navigate_to_nth_today_birthday(nth)
@@ -2213,6 +2224,9 @@ class KakaoFriends:
                 target, template_content, image_path,
                 False, msg_engine, result, on_progress, idx=nth,
             )
+            # 발송 성공 시 로그에 기록
+            if sent_log is not None and target.get("action") == "sent":
+                sent_log.mark_sent(target["name"])
 
         _diag(f"send_birthday_messages(send): 완료 — sent={result['sent']}, errors={len(result['errors'])}")
         result["ok"] = True
