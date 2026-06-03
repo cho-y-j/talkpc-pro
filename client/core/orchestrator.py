@@ -823,6 +823,9 @@ class Orchestrator:
 
             ocr = OCREngine()
             self._kakao_friends = KakaoFriends(win32, ocr, self.screen_capture)
+            # 생일 발송 등에서 sender 의 검증된 chat_hwnd/좌표 경로 재사용
+            if hasattr(self, "sender") and self.sender is not None:
+                self._kakao_friends.set_sender(self.sender)
         return self._kakao_friends
 
     def seed_contacts_from_kakao(self, max_count: int = 1000,
@@ -965,6 +968,21 @@ class Orchestrator:
             return {"ok": False, "reason": "템플릿 없음", "sent": 0,
                     "skipped": 0, "errors": [], "targets": [], "dry_run": dry_run}
 
+        # ★ sender 자동 초기화 — 스케줄러 시작 직후엔 confirm_calibration 미호출
+        #   상태라 self.sender=None. 그러면 kakao_friends 가 sender 의 검증된
+        #   chat_hwnd/좌표 경로 못 써서 발송이 main_hwnd 로 가는 사고. 여기서
+        #   필요하면 lazy 초기화.
+        if self.sender is None:
+            try:
+                self.load_coordinates_auto_first()
+                self.sender = KakaoSender(self.coordinates, self.config)
+                # 기존 _kakao_friends 가 있다면 sender 주입
+                if getattr(self, "_kakao_friends", None) is not None:
+                    self._kakao_friends.set_sender(self.sender)
+                self._emit_log("sender 자동 초기화 완료 (스케줄러 발송)")
+            except Exception as e:
+                self._emit_log(f"sender 자동 초기화 실패: {e}", "error")
+
         self._emit_state(OrchestratorState.SENDING)
         self._emit_log("=" * 40)
         self._emit_log(f"🎂 카톡 친구탭 생일 발송 시작 (dry_run={dry_run})")
@@ -981,13 +999,27 @@ class Orchestrator:
                 self._emit_log(f"  [{idx+1}] {name} → 실패 ({action})", "error")
             self._emit_progress(idx + 1, 0, name)
 
+        # 실발송 직전 dry_run scan 결과 재사용 → 생일자 enumerate 8초 절약.
+        # 캐시는 본 클래스의 _last_birthday_scan 에 보관.
+        pre_scanned = None
+        if not dry_run:
+            pre_scanned = getattr(self, "_last_birthday_scan", None)
+
         result = self.kakao_friends.send_birthday_messages(
             template_content=template_content,
             image_path=image_path,
             dry_run=dry_run,
             daily_limit=daily_limit,
             on_progress=progress_cb,
+            pre_scanned_rows=pre_scanned,
         )
+
+        # 다음 호출(실발송) 에서 재사용할 scan 결과 저장 (dry_run 일 때만)
+        if dry_run and result.get("scan_rows"):
+            self._last_birthday_scan = result["scan_rows"]
+        else:
+            # 실발송 끝나면 캐시 무효 (다음번 dry 가 새로 스캔)
+            self._last_birthday_scan = None
 
         if result["ok"]:
             mode = "DRY RUN" if dry_run else "실발송"

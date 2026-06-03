@@ -203,6 +203,129 @@ gh release upload v0.1.x <파일> --clobber
 - Cython 핀 추가 후엔 정상 동작 가능. 단 로컬 검증 본을 우선으로 함.
 - CI artifacts 가 로컬 본을 덮어쓸 위험 — 같은 태그 작업 시 충돌 주의.
 
+## 생일 자동발송 아키텍처 (v0.1.11 확정 — 2026-06-03)
+
+### 흐름 — 수동/스케줄러 동일
+
+```
+orchestrator.run_kakao_birthday_send(dry_run=...)
+  └─ kakao_friends.send_birthday_messages(...)
+       ├─ ensure_ready_state(친구탭 자동 전환 + 검색창 닫기)
+       ├─ Phase 1: _scan_birthday_section()
+       │     └─ click_first_birthday() + ↓ 로 birthday 섹션 enumerate
+       │     └─ today_rows / other_rows 분리
+       └─ Phase 2 (실발송): for nth, target in enumerate(today_rows):
+             _navigate_to_nth_today_birthday(nth)
+             _process_birthday_target() → sender.send_to_current_selection()
+```
+
+**핵심 원칙**:
+- **Scan 한 번 → N명 확정 → 정확히 N번 발송 → 종료.** 끝없이 헤매기 없음.
+- 스케줄러도 같은 코드 경로 (수동과 동일).
+
+### sender 자동 초기화 (스케줄러 경로 필수)
+
+`orchestrator.__init__` 시점에 `self.sender = None`. `confirm_calibration()` 호출 시
+초기화. 스케줄러 자동발화 시점엔 confirm_calibration 미호출 가능 →
+`run_kakao_birthday_send` 시작에 lazy init:
+
+```python
+if self.sender is None:
+    self.load_coordinates_auto_first()
+    self.sender = KakaoSender(self.coordinates, self.config)
+    if self._kakao_friends is not None:
+        self._kakao_friends.set_sender(self.sender)
+```
+
+이 없으면 chat_hwnd 분리 안 됨 → main 의 X 버튼/광고 클릭으로 카톡 닫히는
+사고 (kakao_sender go_back 주석 참조).
+
+### Scheduler — 시작 grace 90초
+
+`scheduler._check_daily_auto_send`:
+- 앱 시작 시각(`_startup_time`) 기록
+- 시작 후 90초 안엔 무조건 skip (사용자가 새 시간 저장할 시간 확보)
+- 매 체크마다 `self.load()` — UI 에서 시간 바꾸면 즉시 반영
+
+**없으면**: 재시작 직후 stale 설정(이전 시각)으로 즉시 트리거 → 사용자가
+새 시간 저장하기 전에 발화 → 의도와 다른 시점 발송.
+
+### ensure_ready_state — 자동 친구탭 복귀
+
+`send_birthday_messages` 시작에서 호출:
+
+```python
+self.ensure_ready_state(
+    friends_icon=self.sender.coords.get("friends_tab_icon"),
+    search_icon=self.sender.coords.get("search_icon"),
+)
+```
+
+내부에서 `_click_friends_tab_icon` (사람아이콘 stealth click) → OCR 로
+친구탭 활성 검증 → 안 됐으면 1회 재시도. 검색창 열려있으면 search_icon
+토글로 닫기.
+
+**`_click_friends_tab_icon` 주의**: stealth click 전 반드시 `activate(main_hwnd)`.
+백그라운드/다른 창 포그라운드 상태에선 클릭이 엉뚱한 창으로 가서 탭 전환
+실패. (스케줄러 자동발송 시 TalkPC-Pro UI 가 가로채는 케이스)
+
+### sender.send_to_current_selection() — 신규 메서드
+
+`kakao_sender.py` 에 추가. ↓ 키로 selection 박힌 친구에게 메시지 발송.
+이름 검색 없음 (동명이인 회피). 흐름:
+
+1. `activate(main_hwnd) + keybd_event Enter` (글로벌 키, PostMessage 안 먹힘)
+2. `get_foreground_as_chat()` → chat_hwnd. **main_hwnd 와 같으면 abort**
+   (좌표 클릭이 메인의 X/광고 누르는 사고 방지).
+3. `position_chat_to_main()` → 채팅창을 main 위치로
+4. `type_message()` (message_input 좌표 stealth click + paste_text)
+5. `send_message()` (send_enter 좌표 stealth click)
+6. `paste_image()` (선택)
+7. `go_back()` (back_button 좌표 stealth click on chat_hwnd)
+8. `activate(main_hwnd)` — 다음 ↓ navigate 가 main 친구탭에 먹히게
+
+**OCR 경고팝업 자동감지 호출 X**: `detect_warning_popup()` 가 friend tab
+안내문 "친구의 생일을 **확인해** 보세요" 또는 TalkPC-Pro 설정 dialog 의
+"확인" 단어를 잡아 false positive 차단되는 사고 → 호출 제거.
+
+### 일자 분류 — yesterday / tomorrow 구분
+
+`_classify_row_text` 가 "어제/그제" → `"yesterday"`, "내일/모레" →
+`"tomorrow"` 분리. (이전엔 `"other"` 통합 → `_sync_birthday_to_contacts`
+의 `DAY_MMDD["yesterday"]/"tomorrow"` 매칭 실패 → DB 자동저장 안 됨)
+
+매일 실행 시 ±1일 생일자 = 3일치 동시 수집 → ~120일이면 1년치 완성.
+
+### `_navigate_to_nth_today_birthday(n)` — 매 발송마다 처음부터
+
+```python
+def _navigate_to_nth_today_birthday(self, n):
+    click_first_birthday() → 첫 생일자 도달
+    if n == 0 and first.day == "today": return True
+    # n>0: ↓ 키로 today 카운트하며 n번째까지
+```
+
+매번 처음부터 navigate — 신버전 카톡이 발송 후 selection 손실 + 생일자
+숨김 동작 안전하게 처리. 매 ↓ 전 `activate(main_hwnd)` 필수.
+
+### `click_first_birthday` — ↓ 키 + seed click
+
+- `reset_to_top()` + 본인 프로필 행에 **stealth seed click** (selection 박기)
+- `navigate_step()` 반복 → birthday day=today 발견 시 selection 위치에서 return
+- `friend` 분류 행은 통과 (프로필도 friend 로 분류됨)
+- MAX_STEPS=15, MAX_CONSECUTIVE_NO_MOVE=3
+
+### 디버깅 절차
+
+문제 발생 시 1순위 — `%TEMP%\kakao_win32_debug.log` 확인.
+- `[STARTUP] PaddleOCR 인스턴스: OK` — Paddle 정상
+- `send_birthday_messages: sender=True` — sender 주입 확인
+- `_click_friends_tab_icon: 검증 OK` — 친구탭 전환 성공
+- `_scan_birthday_section: scan 완료 — today=N other=M` — 발견 카운트
+- `_navigate_to_nth(n=K): 도달 — selection='XXX'` — 정확한 도달
+- `채팅창 감지: hwnd=다른값 title='XXX'` — main 과 다른 hwnd 면 정상
+- `send_to_current_selection: 완료` — 정상 종료
+
 ## 로그/캡처 누적 방지 정책 (v0.1.8)
 
 상용 배포에서 무한 누적 디스크 점유 방지. **발송/수집 이력은 보존**:

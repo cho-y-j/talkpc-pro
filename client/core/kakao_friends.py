@@ -244,6 +244,13 @@ class KakaoFriends:
         self.win32 = win32_engine
         self.ocr = ocr_engine
         self.capture = screen_capture
+        # 생일 발송 시 sender 의 검증된 send_to_current_selection 사용용.
+        # orchestrator 가 KakaoFriends 생성 후 set_sender() 로 주입.
+        self.sender = None
+
+    def set_sender(self, sender):
+        """KakaoSender 주입 — 검증된 chat_hwnd / 좌표 클릭 발송 사용."""
+        self.sender = sender
 
     # ── 카카오 메인 창 캡처 ──
 
@@ -558,7 +565,10 @@ class KakaoFriends:
 
     # 행 시점 라벨 (카톡 생일 섹션은 ±2일 보여줌)
     DAY_TODAY = ["오늘"]
-    DAY_OTHER = ["어제", "내일", "그제", "모레"]
+    DAY_YESTERDAY = ["어제", "그제"]
+    DAY_TOMORROW = ["내일", "모레"]
+    # 호환용 — 어제/내일 합쳐 검사하는 기존 코드 경로
+    DAY_OTHER = DAY_YESTERDAY + DAY_TOMORROW
 
     def _classify_row_day(self, row_y: int, hits: list,
                            y_tolerance: int = 25) -> str:
@@ -952,12 +962,18 @@ class KakaoFriends:
                 cleaned = re.sub(r"오늘\s*\d*월?\s*\d*일?", "", text)
                 name = _extract_korean_name(cleaned)
                 return ("birthday", "today", name)
-        for kw in self.DAY_OTHER:
+        # ★ 어제/내일 구분 — _sync_birthday_to_contacts 가 yesterday/tomorrow
+        #   라벨로 MM-DD 산출하므로 합쳐서 "other" 로 묶으면 DB 저장이 안 됨.
+        for kw in self.DAY_YESTERDAY:
             if kw in text:
-                cleaned = re.sub(r"(어제|내일|그제|모레)\s*\d*월?\s*\d*일?",
-                                  "", text)
+                cleaned = re.sub(r"(어제|그제)\s*\d*월?\s*\d*일?", "", text)
                 name = _extract_korean_name(cleaned)
-                return ("birthday", "other", name)
+                return ("birthday", "yesterday", name)
+        for kw in self.DAY_TOMORROW:
+            if kw in text:
+                cleaned = re.sub(r"(내일|모레)\s*\d*월?\s*\d*일?", "", text)
+                name = _extract_korean_name(cleaned)
+                return ("birthday", "tomorrow", name)
 
         # 채널 헤더 또는 채널 행
         for kw in self.SECTION_CHANNEL:
@@ -1027,7 +1043,7 @@ class KakaoFriends:
         return self._ocr_single_line(image), ""
 
     def navigate_step(self, prev_image=None,
-                       wait_after: float = 0.25) -> dict:
+                       wait_after: float = 0.15) -> dict:
         """
         ↓ 1회 → 새 선택 행 식별 + OCR.
 
@@ -1401,14 +1417,43 @@ class KakaoFriends:
         except Exception:
             pass
 
-        old_mode = self.win32.click_mode
-        self.win32.click_mode = self.win32.MODE_STEALTH
-        try:
-            self.win32.click(click_x, click_y)
-            time.sleep(0.6)
-        finally:
-            self.win32.click_mode = old_mode
-        return True
+        # ★ 카톡 main 활성화 후 클릭 — 백그라운드/다른 창 포그라운드면 stealth
+        #   클릭이 엉뚱한 창(예: 브라우저, TalkPC-Pro UI)에 가서 탭 전환 실패.
+        #   스케줄러 자동발송 시 이 경로 잡혀서 친구탭 못 찍던 문제 원인.
+        # 클릭 + 검증(친구탭으로 실제 전환됐는지) + 1회 재시도.
+        for attempt in range(2):
+            self.win32.activate(self.win32.main_hwnd)
+            time.sleep(0.4)
+            old_mode = self.win32.click_mode
+            self.win32.click_mode = self.win32.MODE_STEALTH
+            try:
+                self.win32.click(click_x, click_y)
+                time.sleep(0.8)
+            finally:
+                self.win32.click_mode = old_mode
+
+            # 친구탭 활성화 검증 — 상단 25% 에 "친구" 텍스트 있고 "채팅" 없으면 OK
+            try:
+                hits = self.find_text_hits()
+                if self.is_friends_tab_active(hits=hits):
+                    try:
+                        from core.kakao_win32 import _log as _w32_log
+                        _w32_log(f"_click_friends_tab_icon: 검증 OK (attempt={attempt+1})")
+                    except Exception:
+                        pass
+                    return True
+            except Exception:
+                pass
+
+            try:
+                from core.kakao_win32 import _log as _w32_log
+                _w32_log(
+                    f"_click_friends_tab_icon: attempt={attempt+1} 친구탭 미활성 — "
+                    f"재시도 예정" if attempt == 0 else f"_click_friends_tab_icon: 재시도 후에도 친구탭 미활성"
+                )
+            except Exception:
+                pass
+        return False
 
     def _close_search_box(self) -> bool:
         """검색창 닫기 — 검색 아이콘(돋보기)을 한 번 누르면 토글로 닫힘.
@@ -1639,16 +1684,125 @@ class KakaoFriends:
 
     def click_first_birthday(self) -> dict:
         """
-        첫 생일자 행 클릭 (네비게이션 시작점).
-        오늘 생일자 우선, 없으면 어제/내일 생일자라도 클릭 (시작점만 필요).
+        첫 생일자 행 찾기 (네비게이션 시작점).
+        오늘 생일자 우선, 없으면 어제/내일 생일자라도 OK (시작점만 필요).
+
+        v0.1.11: 친구 수집과 동일한 ↓ 키 방식. 친구탭 맨 위로 reset → ↓ 키
+        반복하며 navigate_step 으로 각 행 OCR → section 이 "birthday" 면 즉시
+        성공, "friend" 만나면 생일 섹션이 없는 계정 → 빠른 종료.
+
+        장점:
+          - 새로운친구/업데이트한친구 길이에 상관없이 한 행씩 정확히 탐색.
+          - 헤더("생일인 친구 N")가 viewport 밖이어도 OCR 부정확 영향 없음.
+          - selection 이 자연스럽게 첫 생일자에 위치 → send_birthday_messages
+            의 ↓ 루프가 그대로 이어짐 (별도 클릭 불필요).
 
         Returns:
             {
                 "ok": bool,
                 "reason": str,    # 실패 사유 (UI 표시용)
-                "row": dict|None,
+                "row": dict|None, # name/day/row_text/section
             }
         """
+        self.win32.activate(self.win32.main_hwnd)
+        time.sleep(0.5)
+
+        hits = self.find_text_hits()
+        if not self.is_friends_tab_active(hits=hits):
+            _diag("click_first_birthday: 친구탭 비활성")
+            return {"ok": False, "reason": "카톡 친구탭이 활성화돼 있지 않습니다.", "row": None}
+
+        # 맨 위로 — viewport 가 처음 위치에서 시작
+        self.reset_to_top()
+        time.sleep(0.4)
+
+        # ★ ↓ 키 input 이 친구탭 리스트로 가게 하려면 초기 selection 이 필요.
+        #   없으면 ↓ 가 무시되거나 다른 위젯으로 감 → 첫 navigate_step 이 moved=False.
+        #   친구탭 최상단(본인 프로필 행 위치)에 stealth-click 으로 selection 박기.
+        rect = self.get_window_rect()
+        if rect:
+            seed_x = rect["x"] + rect["width"] // 2
+            # 창 높이의 18% 지점 ≈ 본인 프로필 행 중앙 (탭헤더/검색바 아래 첫 행)
+            seed_y = rect["y"] + int(rect["height"] * 0.18)
+            old_mode = self.win32.click_mode
+            self.win32.click_mode = self.win32.MODE_STEALTH
+            try:
+                self.win32.click(seed_x, seed_y)
+                time.sleep(0.6)
+            finally:
+                self.win32.click_mode = old_mode
+            _diag(f"click_first_birthday: seed click ({seed_x},{seed_y}) — 본인 프로필 행")
+
+        # ↓ 키 반복 — 친구 수집과 동일 패턴. 생일 섹션은 보통 상단(프로필 직후).
+        # MAX_STEPS=15: 프로필 + 채널 + 새로운/업데이트친구 합쳐 ~10 + 마진.
+        # 15 step 안에 생일 안 잡히면 사실상 없는 거.
+        # MAX_CONSECUTIVE_FRIEND=5: 친구 섹션 행 5번 연속 = 생일 섹션 지나친 거.
+        #   더 빠른 종료(쓸데없이 친구목록 끝없이 ↓ 헤매기 방지).
+        MAX_STEPS = 15
+        MAX_CONSECUTIVE_NO_MOVE = 3
+        MAX_CONSECUTIVE_FRIEND = 5
+        friend_streak = 0
+        no_move_streak = 0
+        prev_image = self.capture_window()
+        passed_sections = []
+
+        for step in range(MAX_STEPS):
+            # ★ 매 ↓ 전 카톡 main 재활성. 스케줄러 자동발송 시 TalkPC-Pro UI
+            #   복귀로 포그라운드 가로채면 ↓ 키 입력이 묻혀버림.
+            self.win32.activate(self.win32.main_hwnd)
+            time.sleep(0.2)
+            result = self.navigate_step(prev_image=prev_image)
+            prev_image = result["cur_image"]
+
+            if not result["moved"]:
+                no_move_streak += 1
+                _diag(f"click_first_birthday: step {step+1} moved=False (streak={no_move_streak})")
+                # 추가 안정화 — main 재활성 + 더 길게 대기 후 재시도
+                if no_move_streak < MAX_CONSECUTIVE_NO_MOVE:
+                    self.win32.activate(self.win32.main_hwnd)
+                    time.sleep(0.6)
+                    prev_image = self.capture_window()
+                if no_move_streak >= MAX_CONSECUTIVE_NO_MOVE:
+                    _diag(f"click_first_birthday: ↓ {MAX_CONSECUTIVE_NO_MOVE}회 연속 안 움직임 → 종료 (최후 섹션={passed_sections[-3:]})")
+                    return {"ok": False,
+                            "reason": "친구 목록 끝까지 갔지만 생일자를 못 찾았습니다.",
+                            "row": None}
+                continue
+            no_move_streak = 0
+
+            section = result["section"]
+            name = result["name"]
+            day = result["day"]
+            _diag(f"click_first_birthday: step {step+1} section={section} day={day} name={name!r}")
+
+            if section == "birthday":
+                # 첫 생일자 찾음 — selection 이 이미 이 행에 있음
+                return {
+                    "ok": True,
+                    "reason": "",
+                    "row": {
+                        "name": name or "(첫 생일자)",
+                        "day": day,
+                        "row_text": result["row_text"],
+                        "section": "birthday",
+                        "is_today_birthday": result.get("is_today_birthday", False),
+                    },
+                }
+
+            # ★ section == "friend" 여도 종료하지 않음!
+            #   본인 프로필 행(예: "김진균 충북교육감")이 friend 로 분류됨.
+            #   업데이트한 친구들도 이름만 있어 friend 로 분류됨.
+            #   → 생일 섹션은 이들 뒤에 있으므로 계속 ↓ 진행.
+            #   종료는 (1) birthday 발견, (2) moved=False 3연속, (3) MAX_STEPS 초과 만.
+            passed_sections.append(section)
+
+        _diag(f"click_first_birthday: 최대 step({MAX_STEPS}) 초과")
+        return {"ok": False,
+                "reason": f"생일자를 찾지 못했습니다 (최대 {MAX_STEPS}행 탐색 후).",
+                "row": None}
+
+    def _legacy_click_first_birthday_by_coords(self) -> dict:
+        """레거시 좌표 클릭 방식 — 보존용(현재 미사용)."""
         self.win32.activate(self.win32.main_hwnd)
         time.sleep(0.5)
 
@@ -1856,29 +2010,56 @@ class KakaoFriends:
             True (성공) | False (예외 발생)
         """
         try:
-            # 1) Enter → 채팅창 열림
+            _diag(f"_send_to_current_selection: 시작 text='{text[:30]}...'")
+            # 1) Enter(main_hwnd) → 채팅창 별도 윈도우로 열림 (신버전 카톡 PC)
             self.win32.press_enter(self.win32.main_hwnd)
             time.sleep(post_open_delay)
 
-            # 2) 텍스트 붙여넣기
+            # 2) ★ 새로 뜬 채팅창을 포그라운드에서 잡아 chat_hwnd 로 등록.
+            #    이걸 안 잡으면 전송 Enter/Esc 가 main_hwnd 로 가서 메시지 미전송 +
+            #    main 의 X 버튼 영역 활성화로 카톡 자체가 닫히는 사고(kakao_sender
+            #    go_back 주석 참조). 감지 실패 시 main_hwnd fallback.
+            chat_hwnd = self.win32.get_foreground_as_chat()
+            if chat_hwnd:
+                self.win32.activate(chat_hwnd)
+                time.sleep(0.3)
+                _diag(f"_send_to_current_selection: 1) Enter(채팅열기) chat_hwnd={chat_hwnd}")
+            else:
+                _diag(f"_send_to_current_selection: 1) Enter(채팅열기) chat_hwnd=감지실패(main fallback)")
+
+            # 3) 텍스트 붙여넣기 (포그라운드=채팅창, Ctrl+V 가 입력창으로)
             self.win32.paste_text(text)
             time.sleep(0.4)
+            _diag(f"_send_to_current_selection: 2) paste_text done")
 
-            # 3) 이미지 (선택)
+            # 4) 이미지 (선택)
             if image_path:
                 self.win32.paste_image(image_path)
                 time.sleep(0.5)
+                _diag(f"_send_to_current_selection: 3) paste_image done")
 
-            # 4) Enter → 전송
+            # 5) Enter(chat_hwnd) → 전송. press_enter() 는 chat_hwnd or main_hwnd
+            #    자동 fallback 이라 인자 생략 OK.
             self.win32.press_enter()
             time.sleep(post_send_delay)
+            _diag(f"_send_to_current_selection: 4) Enter(전송) done")
 
-            # 5) ESC → 채팅창 닫고 친구탭 복귀
-            self.win32.press_escape()
+            # 6) ESC(chat_hwnd) → 채팅창 닫기. main_hwnd 로 가면 메인이 영향받아
+            #    카톡 자체가 이상해질 수 있어 chat 으로 명시.
+            esc_hwnd = self.win32.chat_hwnd or self.win32.main_hwnd
+            self.win32.press_escape(esc_hwnd)
             time.sleep(0.5)
+            _diag(f"_send_to_current_selection: 5) ESC(채팅닫기, hwnd={esc_hwnd}) done")
+
+            # 7) main 재활성화 + chat_hwnd 초기화 → 다음 ↓ navigate 준비
+            self.win32.activate(self.win32.main_hwnd)
+            time.sleep(0.3)
+            self.win32.chat_hwnd = None
+            _diag(f"_send_to_current_selection: 6) main 복귀 + chat_hwnd 초기화 — return True")
 
             return True
-        except Exception:
+        except Exception as e:
+            _diag(f"_send_to_current_selection: 예외 발생 → return False: {e!r}")
             return False
 
     # ── Phase 2: 메인 자동화 루프 ──
@@ -1889,7 +2070,8 @@ class KakaoFriends:
                                  dry_run: bool = True,
                                  daily_limit: int = 50,
                                  max_steps: int = 30,
-                                 on_progress=None) -> dict:
+                                 on_progress=None,
+                                 pre_scanned_rows: list = None) -> dict:
         """
         오늘 생일자에게만 카톡 자동 메시지 발송.
 
@@ -1926,91 +2108,248 @@ class KakaoFriends:
 
         msg_engine = MessageEngine()
 
-        # 1) 친구탭 + 맨 위로
-        if not self.reset_to_top():
-            result["reason"] = "친구탭 맨 위 스크롤 실패. 카톡 친구탭이 활성화돼 있는지 확인하세요."
-            return result
-
-        # 2) 첫 생일자 클릭 (selection 확립)
-        click_res = self.click_first_birthday()
-        if not click_res["ok"]:
-            result["reason"] = click_res["reason"]
-            return result
-
-        # 첫 행이 오늘 생일인지 우선 처리 (click 후 selection = 첫 행)
-        # click_first_birthday 가 OCR 한 이름/텍스트를 row 에 채워둠
-        first_row = click_res["row"]
-        first_target = {
-            "step": 0,
-            "name": first_row.get("name") or "(첫 생일자)",
-            "day": first_row.get("day"),
-            "row_text": first_row.get("row_text", ""),
-            "action": "pending",
-        }
-
-        # 3) 첫 행이 오늘이면 발송
-        if first_row.get("day") == "today":
-            self._process_birthday_target(
-                first_target, template_content, image_path,
-                dry_run, msg_engine, result, on_progress, idx=0,
+        # ── 친구탭 자동 정상화 — 사용자가 카톡 다른 탭(채팅 등) 보고 있을 수
+        #   있음. ensure_ready_state 가 friends_tab_icon 클릭 + 검색창 닫기로
+        #   자동 복귀. sender 가 주입돼 있으면 그 coords 사용.
+        _diag(f"send_birthday_messages: sender={self.sender is not None}, "
+              f"dry_run={dry_run}")
+        friends_icon = None
+        search_icon = None
+        if self.sender is not None and hasattr(self.sender, "coords"):
+            friends_icon = self.sender.coords.get("friends_tab_icon")
+            search_icon = self.sender.coords.get("search_icon")
+            _diag(f"send_birthday_messages: friends_icon={friends_icon}, "
+                  f"search_icon={search_icon}")
+        try:
+            ready = self.ensure_ready_state(
+                friends_icon=friends_icon,
+                search_icon=search_icon,
             )
-        else:
-            first_target["action"] = "skip_not_today"
-            result["targets"].append(first_target)
-            result["skipped"] += 1
-            if on_progress:
-                on_progress(first_target, "skip", 0)
+            _diag(f"send_birthday_messages: ensure_ready_state ok={ready.get('ok')} "
+                  f"actions={ready.get('actions')} final={ready.get('final_state')}")
+        except Exception as e:
+            _diag(f"send_birthday_messages: ensure_ready_state 예외(무시): {e!r}")
 
-        # 4) ↓ 루프 — 생일 섹션 벗어날 때까지
-        prev_image = None
-        sent_count = result["sent"]
-        for i in range(1, max_steps):
-            # 일일 한도 체크
-            if sent_count >= daily_limit:
+        # ── 발송 모드 분기 ──
+        # 카톡은 ↓ 로 생일 섹션을 지나가면 다음 click_first_birthday 시점에
+        # 생일/채널 섹션을 자동 숨김(collapse). → 미리 enumerate 후 재navigate
+        # 는 실패. dry_run/실발송 모두 "첫 생일자 찾기" 만 반복하는 게 안전.
+        if dry_run:
+            # ── Dry-run: 전체 enumerate (preview 용) ──
+            if pre_scanned_rows is not None:
+                scan_rows = pre_scanned_rows
+            else:
+                scan = self._scan_birthday_section(max_steps)
+                if not scan["ok"]:
+                    result["reason"] = scan["reason"]
+                    return result
+                scan_rows = scan["rows"]
+
+            today_rows = [r for r in scan_rows if r["day"] == "today"]
+            other_rows = [r for r in scan_rows if r["day"] != "today"]
+            result["scan_rows"] = scan_rows
+            _diag(f"send_birthday_messages(dry): today={len(today_rows)} other={len(other_rows)}")
+
+            for nth, target_row in enumerate(today_rows):
+                target = {
+                    "step": nth, "name": target_row["name"], "day": "today",
+                    "row_text": target_row["row_text"][:60], "action": "pending",
+                }
+                self._process_birthday_target(
+                    target, template_content, image_path,
+                    True, msg_engine, result, on_progress, idx=nth,
+                )
+            for r in other_rows:
+                result["targets"].append({
+                    "name": r["name"], "day": r["day"], "row_text": r["row_text"],
+                    "action": "skip_not_today",
+                })
+                result["skipped"] += 1
+
+            result["ok"] = True
+            return result
+
+        # ── 실발송: 스캔으로 today 목록 확정 → N번 발송 → 끝. 수동 방식과 동일. ──
+        scan = self._scan_birthday_section(max_steps)
+        if not scan["ok"]:
+            result["reason"] = scan["reason"]
+            return result
+
+        scan_rows = scan["rows"]
+        today_rows = [r for r in scan_rows if r["day"] == "today"]
+        other_rows = [r for r in scan_rows if r["day"] != "today"]
+        result["scan_rows"] = scan_rows
+        _diag(f"send_birthday_messages(send): scan 완료 — today={len(today_rows)} other={len(other_rows)}")
+
+        # other(어제/내일) DB 동기화용 기록만
+        for r in other_rows:
+            result["targets"].append({
+                "name": r["name"], "day": r["day"],
+                "row_text": r["row_text"], "action": "skip_not_today",
+            })
+            result["skipped"] += 1
+
+        # today 명단 — 정확히 N번 발송하고 종료. 끝없이 찾기 없음.
+        for nth, target_row in enumerate(today_rows):
+            if result["sent"] >= daily_limit:
                 result["reason"] = f"일일 한도 {daily_limit} 도달 — 종료"
                 break
 
-            step = self.navigate_step(prev_image=prev_image)
-            prev_image = step["cur_image"]
+            target = {
+                "step": nth, "name": target_row["name"], "day": "today",
+                "row_text": target_row["row_text"][:60], "action": "pending",
+            }
+
+            # nth 번째 today 생일자에 selection 박기
+            pos_ok = self._navigate_to_nth_today_birthday(nth)
+            if not pos_ok:
+                target["action"] = "error_navigate"
+                result["errors"].append(f"{target['name']}: 재navigate 실패")
+                result["targets"].append(target)
+                _diag(f"send_birthday_messages(send): nth={nth} '{target['name']}' navigate 실패 — 다음으로")
+                continue
+
+            self._process_birthday_target(
+                target, template_content, image_path,
+                False, msg_engine, result, on_progress, idx=nth,
+            )
+
+        _diag(f"send_birthday_messages(send): 완료 — sent={result['sent']}, errors={len(result['errors'])}")
+        result["ok"] = True
+        return result
+
+        # (이하 unreachable — dry_run 경로는 위 return 으로 종료)
+        # 아래 dead code 는 가독성 위해 남기지 않음.
+        scan_rows = []
+        today_rows = []
+        other_rows = []
+
+        # other(어제/내일) 들은 발송 X — 스킵 카운트만
+        for r in other_rows:
+            result["targets"].append({
+                "name": r["name"], "day": r["day"], "row_text": r["row_text"],
+                "action": "skip_not_today",
+            })
+            result["skipped"] += 1
+
+        # ── Phase 2: 발송 ──
+        # dry_run: enumerate 결과를 그대로 dry_run_sent 로 마킹.
+        # real_send: 매 발송마다 click_first_birthday 재실행 + N번 ↓ 스킵 후 발송.
+        #   이유: 신버전 카톡은 채팅창 닫힘 후 friend list selection 이 손실돼서
+        #   기존 selection 에서 ↓ 가 안 먹힘. 매번 처음부터 navigate 가 가장 안정적.
+        for nth, target_row in enumerate(today_rows):
+            if result["sent"] >= daily_limit:
+                result["reason"] = f"일일 한도 {daily_limit} 도달 — 종료"
+                break
 
             target = {
-                "step": i,
-                "name": step["name"],
-                "day": step["day"],
-                "row_text": step["row_text"][:60],
+                "step": nth,
+                "name": target_row["name"],
+                "day": "today",
+                "row_text": target_row["row_text"][:60],
                 "action": "pending",
             }
 
-            # 종료 조건들
-            if not step["moved"]:
-                target["action"] = "end_no_movement"
-                result["targets"].append(target)
-                break
+            if not dry_run:
+                # 실발송: nth 번째 오늘 생일자에 selection 박기 (매번 재navigate).
+                # scan 이 ↓ 로 모든 행을 enumerate 하므로 scan 종료 시점 selection
+                # 은 마지막 ↓ 위치(헤더 등)에 있어 재사용 불가.
+                pos_ok = self._navigate_to_nth_today_birthday(nth)
+                if not pos_ok:
+                    target["action"] = "error_navigate"
+                    result["errors"].append(f"{target['name']}: 재navigate 실패")
+                    result["targets"].append(target)
+                    _diag(f"send_birthday_messages: nth={nth} '{target['name']}' navigate 실패")
+                    continue
 
-            # 생일 섹션 벗어남 → 종료
-            if step["section"] != "birthday":
-                target["action"] = f"end_section_{step['section']}"
-                result["targets"].append(target)
-                break
-
-            # 생일자인데 오늘 아님 → 스킵
-            if not step["is_today_birthday"]:
-                target["action"] = "skip_not_today"
-                result["targets"].append(target)
-                result["skipped"] += 1
-                if on_progress:
-                    on_progress(target, "skip", i)
-                continue
-
-            # 오늘 생일자 → 발송
             self._process_birthday_target(
                 target, template_content, image_path,
-                dry_run, msg_engine, result, on_progress, idx=i,
+                dry_run, msg_engine, result, on_progress, idx=nth,
             )
-            sent_count = result["sent"]
 
         result["ok"] = True
         return result
+
+    def _scan_birthday_section(self, max_steps: int = 50) -> dict:
+        """친구탭에서 생일 섹션을 한 번 ↓ 로 훑어 행 목록 반환.
+
+        Returns: {ok, reason, rows: [{name, day, row_text, section}, ...]}
+            day in ("today", "other")
+        """
+        rows = []
+        # 1) 친구탭 + 맨 위로
+        if not self.reset_to_top():
+            return {"ok": False, "reason": "친구탭 맨 위 스크롤 실패.", "rows": []}
+
+        # 2) 첫 생일자 도달 (click_first_birthday 가 selection 박음)
+        click_res = self.click_first_birthday()
+        if not click_res["ok"]:
+            return {"ok": False, "reason": click_res["reason"], "rows": []}
+
+        first_row = click_res["row"]
+        rows.append({
+            "name": first_row.get("name") or "(첫 생일자)",
+            "day": first_row.get("day") or "other",
+            "row_text": first_row.get("row_text", ""),
+            "section": "birthday",
+        })
+
+        # 3) ↓ 로 생일 섹션 끝까지 enumerate
+        prev_image = self.capture_window()
+        for i in range(1, max_steps):
+            step = self.navigate_step(prev_image=prev_image)
+            prev_image = step["cur_image"]
+            if not step["moved"]:
+                _diag(f"_scan_birthday_section: ↓ moved=False at step {i}")
+                break
+            if step["section"] != "birthday":
+                _diag(f"_scan_birthday_section: 섹션 이탈({step['section']}) at step {i}")
+                break
+            rows.append({
+                "name": step["name"],
+                "day": step["day"] or "other",
+                "row_text": step["row_text"],
+                "section": "birthday",
+            })
+        return {"ok": True, "reason": "", "rows": rows}
+
+    def _navigate_to_nth_today_birthday(self, n: int) -> bool:
+        """n 번째(0-인덱스) 오늘 생일자에 selection 박기.
+
+        매 발송 후 selection 손실 대응 — click_first_birthday 부터 다시 시작 +
+        n 번 ↓ (단 어제/내일 행은 카운트 X, today 만 카운트).
+        """
+        click_res = self.click_first_birthday()
+        if not click_res["ok"]:
+            _diag(f"_navigate_to_nth: click_first 실패 — {click_res['reason']}")
+            return False
+
+        first_row = click_res["row"]
+        today_seen = 1 if first_row.get("day") == "today" else 0
+        if n == 0 and first_row.get("day") == "today":
+            _diag(f"_navigate_to_nth(n=0): 첫 생일자가 today — 도달")
+            return True
+
+        prev_image = self.capture_window()
+        for step_i in range(50):
+            # 매 ↓ 전 main 재활성 (포커스 보장)
+            self.win32.activate(self.win32.main_hwnd)
+            time.sleep(0.2)
+            step = self.navigate_step(prev_image=prev_image)
+            prev_image = step["cur_image"]
+            if not step["moved"]:
+                _diag(f"_navigate_to_nth(n={n}): moved=False at i={step_i} (today_seen={today_seen})")
+                return False
+            if step["section"] != "birthday":
+                _diag(f"_navigate_to_nth(n={n}): 섹션 이탈 at i={step_i}")
+                return False
+            if step["day"] == "today":
+                if today_seen == n:
+                    _diag(f"_navigate_to_nth(n={n}): 도달 — selection={step['name']!r}")
+                    return True
+                today_seen += 1
+        _diag(f"_navigate_to_nth(n={n}): 최대 step 도달")
+        return False
 
     def _process_birthday_target(self, target: dict, template_content: str,
                                    image_path: str, dry_run: bool,
@@ -2039,8 +2378,13 @@ class KakaoFriends:
                 on_progress(target, "dry_run_sent", idx)
             return
 
-        # 실제 발송
-        ok = self._send_to_current_selection(message, image_path=image_path)
+        # 실제 발송 — sender 주입돼 있으면 검증된 chat_hwnd/좌표 경로 사용.
+        # 없으면 기존 PostMessage 기반 fallback (이름 검색 없이 동작은 하나
+        # 신버전 카톡에서 채팅창 별도 윈도우 문제로 불안정).
+        if self.sender is not None:
+            ok = self.sender.send_to_current_selection(message, image_path=image_path)
+        else:
+            ok = self._send_to_current_selection(message, image_path=image_path)
         if ok:
             target["action"] = "sent"
             result["sent"] += 1

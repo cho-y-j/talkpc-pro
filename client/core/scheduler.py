@@ -105,6 +105,9 @@ class Scheduler:
         self._thread: Optional[threading.Thread] = None
         self._last_date_check = ""  # 날짜 체크 중복 방지
         self._on_job_executed: Optional[Callable] = None
+        # 앱 시작 시각 — startup grace 용. 시작 직후 stale 설정으로 즉시 발화하면
+        # 사용자가 새 시간 저장하기 전에 트리거됨. 90초 grace 로 회피.
+        self._startup_time = datetime.now()
 
         self.load()
 
@@ -273,12 +276,21 @@ class Scheduler:
         if not self.auto_send_settings.get("enabled", False):
             return
 
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        # ★ Startup grace 90초 — 앱 시작 직후 stale 설정으로 즉시 발화하면
+        #   사용자가 새 시간 저장하기 전에 트리거됨. 90초 안엔 발화 안 함.
+        now = datetime.now()
+        if (now - self._startup_time).total_seconds() < 90:
+            return
+
+        today_str = now.strftime("%Y-%m-%d")
         if self._last_date_check == today_str:
             return  # 오늘 이미 체크함
 
-        # 설정된 발송 시간 확인
-        now = datetime.now()
+        # 설정된 발송 시간 확인 (매 체크마다 settings 재로드 — UI 변경 즉시 반영)
+        try:
+            self.load()
+        except Exception:
+            pass
         send_hour = self.auto_send_settings.get("send_hour", 9)
         send_minute = self.auto_send_settings.get("send_minute", 0)
 

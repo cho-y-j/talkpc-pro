@@ -312,6 +312,19 @@ def main():
             _inst = _kf._get_paddle_ocr()
             _log(f"[STARTUP] PaddleOCR 인스턴스: "
                  f"{'OK(정상)' if _inst else 'None(폴백 OCR로 동작)'}")
+            # ★ 콜드 스타트 제거 — 더미 OCR 1회로 모델 로드 + JIT 컴파일 미리.
+            #   안 하면 사용자 첫 클릭(수집/생일발송) 시 3~5초 멈춤.
+            if _inst:
+                try:
+                    import numpy as _np
+                    import time as _t
+                    _t0 = _t.time()
+                    dummy = _np.zeros((64, 200, 3), dtype=_np.uint8)
+                    dummy[20:40, 50:150] = 255  # 작은 흰 사각형 (텍스트 흉내)
+                    _inst.ocr(dummy, cls=False)
+                    _log(f"[STARTUP] PaddleOCR prewarm 완료 ({_t.time()-_t0:.1f}s)")
+                except Exception as _we:
+                    _log(f"[STARTUP] PaddleOCR prewarm 실패(무시): {_we!r}")
     except Exception as _e:
         try:
             from core.kakao_win32 import _log

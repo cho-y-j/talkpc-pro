@@ -734,6 +734,99 @@ class KakaoSender:
         self._send_count += 1
         return SendResult(name, SendResult.SUCCESS, message=message)
 
+    def send_to_current_selection(self, message: str,
+                                    image_path: str = None) -> bool:
+        """
+        카톡 친구탭 ↓ 키로 선택된 현재 친구에게 메시지 발송.
+
+        사용처: kakao_friends.send_birthday_messages — 생일자를 ↓ 로 찾은 직후
+        호출. 동명이인 위험 회피(이름 검색 안 함). selection 이 이미 정확한
+        친구에 위치한다고 전제.
+
+        검증된 `_do_send` 의 5~7단계(type→send→go_back) 재사용:
+          Enter(main) → chat_hwnd 캡처 → type_message → send_message →
+          [paste_image] → go_back. 채팅창 별도 윈도우 대응 + 좌표 stealth.
+
+        Returns: True(성공) | False(예외/감지실패)
+        """
+        try:
+            self._check_stop()
+            _debug_log("send_to_current_selection: 시작")
+
+            # 1) 메인 활성화 + 글로벌 키보드 Enter → 채팅창 별도 윈도우 열기.
+            #    PostMessage Enter 는 신버전 카톡 PC 에서 안 먹힘(로그상 main_hwnd
+            #    유지 = 채팅 미열림). keybd_event 로 실제 키 입력 시뮬 해야
+            #    "선택된 친구 = Enter = 채팅 오픈" 단축키 동작.
+            import ctypes
+            user32 = ctypes.windll.user32
+            VK_RETURN = 0x0D
+            KEYEVENTF_KEYUP = 0x0002
+            self.win32.activate(self.win32.main_hwnd)
+            time.sleep(0.3)
+            user32.keybd_event(VK_RETURN, 0, 0, 0)
+            time.sleep(0.05)
+            user32.keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, 0)
+            self._human_delay(1.2, 1.8)
+
+            # 2) chat_hwnd 캡처(포그라운드). main_hwnd 와 같으면 채팅 미열림 →
+            #    즉시 실패. 안 그러면 좌표 클릭이 메인 위로 가서 X/광고 클릭 사고.
+            chat_hwnd = self.win32.get_foreground_as_chat()
+            if not chat_hwnd:
+                _debug_log("send_to_current_selection: chat_hwnd 감지 실패")
+                return False
+            if chat_hwnd == self.win32.main_hwnd:
+                _debug_log(
+                    f"send_to_current_selection: chat_hwnd({chat_hwnd}) == "
+                    f"main_hwnd → 채팅 미열림. 좌표 클릭 위험으로 abort."
+                )
+                self.win32.chat_hwnd = None
+                return False
+            try:
+                self.win32.position_chat_to_main()
+            except Exception as e:
+                _debug_log(f"채팅창 배치 실패 (무시): {e}")
+
+            # ※ detect_warning_popup 호출 제거 — OCR 이 TalkPC-Pro 설정 dialog
+            #   또는 친구탭 안내문("친구의 생일을 확인해 보세요")의 '확인' 단어를
+            #   warning 키워드로 false positive 잡아서 정상 발송이 abort 되는
+            #   사고 발생. 채팅창 화면 안에서만 OCR 하도록 좁히는 별도 작업
+            #   필요하나 지금은 호출 자체를 빼는 게 안전.
+
+            # 4) 메시지 입력 (message_input 클릭 + paste_text) + 전송
+            if message:
+                self.type_message(message)
+                self.send_message()
+                time.sleep(0.5)
+
+            # 5) 이미지 (선택)
+            if image_path:
+                _debug_log(f"이미지 첨부: {image_path}")
+                self.paste_image(image_path)
+
+            # 6) 뒤로가기 (back_button stealth click on chat_hwnd) — 검증된 go_back
+            self.go_back()
+            self._send_count += 1
+
+            # 7) 다음 ↓ navigate 가 main 친구탭에 먹히도록 main 재활성.
+            #    go_back 만으로는 포그라운드가 main 으로 안 돌아올 수 있어
+            #    PostMessage ↓ 가 묻혀버리는 사고 방지.
+            self.win32.activate(self.win32.main_hwnd)
+            time.sleep(0.4)
+
+            _debug_log("send_to_current_selection: 완료 + main 재활성")
+            return True
+        except Exception as e:
+            _debug_log(f"send_to_current_selection 예외: {e}")
+            # 검색 모드 정리
+            try:
+                search_coord = self.coords.get("search_icon", {})
+                if search_coord and "x" in search_coord:
+                    self.win32.click(search_coord["x"], search_coord["y"])
+                    time.sleep(0.3)
+            except Exception:
+                pass
+            return False
+
     def send_to_contact(self, name: str, message: str, image_path: str = None,
                         max_retry: int = 3) -> SendResult:
         """
