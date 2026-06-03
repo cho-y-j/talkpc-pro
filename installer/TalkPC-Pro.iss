@@ -3,7 +3,7 @@
 
 #define MyAppName "TalkPC Pro"
 #define MyAppNameKey "TalkPC-Pro"
-#define MyAppVersion "0.1.9"
+#define MyAppVersion "0.1.10"
 #define MyAppPublisher "TalkPC Pro"
 #define MyAppURL "https://talkpc-pro-yf6w.vercel.app"
 #define MyAppExeName "TalkPC-Pro.exe"

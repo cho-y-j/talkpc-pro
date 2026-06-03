@@ -7,9 +7,22 @@
 """
 import sys
 import os
+import io
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox
+
+
+# ── frozen exe (console=False) 에서 sys.stdout/stderr 가 None 인 문제 가드 ──
+#   tqdm/paddleocr/일부 라이브러리가 stdout.write() 호출 시 AttributeError
+#   ('NoneType' object has no attribute 'write') 로 죽음.
+#   고객 PC 에서 PaddleOCR 초기화 실패 → 발송 무한대기의 직접 원인이었음
+#   (v0.1.9 까지 재현). DummyIO 로 받아 폐기.
+if getattr(sys, "frozen", False):
+    if sys.stdout is None:
+        sys.stdout = io.StringIO()
+    if sys.stderr is None:
+        sys.stderr = io.StringIO()
 
 
 # ── 경로 ──

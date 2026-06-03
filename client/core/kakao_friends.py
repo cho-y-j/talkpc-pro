@@ -109,6 +109,11 @@ def _get_paddle_ocr():
 
     det_dir = os.path.join(base, "det", "Multilingual_PP-OCRv3_det_infer")
     rec_dir = os.path.join(base, "rec", "korean_PP-OCRv4_rec_infer")
+    # cls 모델도 번들에서 명시 지정. 안 주면 paddleocr 가 use_angle_cls=False
+    # 여도 ~/.paddleocr 캐시 검사 → 없으면 baidu CDN 다운로드 시도 → tqdm 이
+    # console=False frozen exe 에서 sys.stdout=None 으로 죽음. (고객 PC 사고
+    # 직접 원인). 번들 cls 경로 주면 다운로드 자체를 안 함.
+    cls_dir = os.path.join(base, "cls", "ch_ppocr_mobile_v2.0_cls_infer")
 
     try:
         import warnings
@@ -118,6 +123,7 @@ def _get_paddle_ocr():
             lang="korean",
             det_model_dir=det_dir,
             rec_model_dir=rec_dir,
+            cls_model_dir=cls_dir,
             show_log=False,
             # 작은 카톡 폰트 검출률 향상 — 임계값 낮춤
             det_db_thresh=0.2,        # 기본 0.3 → 0.2 (텍스트 영역 더 적극 검출)
