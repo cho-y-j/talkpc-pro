@@ -42,6 +42,10 @@ session.json
 # PyInstaller
 *.spec.bak
 
+# Inno Setup 번들 — 빌드 시 다운로드 (25MB, git 추적 제외)
+# 다운로드: https://aka.ms/vs/17/release/vc_redist.x64.exe
+installer/redist/VC_redist.x64.exe
+
 # IDE
 .idea/
 .vscode/

@@ -3,7 +3,7 @@
 
 #define MyAppName "TalkPC Pro"
 #define MyAppNameKey "TalkPC-Pro"
-#define MyAppVersion "0.1.8"
+#define MyAppVersion "0.1.9"
 #define MyAppPublisher "TalkPC Pro"
 #define MyAppURL "https://talkpc-pro-yf6w.vercel.app"
 #define MyAppExeName "TalkPC-Pro.exe"
@@ -53,6 +53,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "{#SourceDir}\TalkPC-Pro.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Microsoft Visual C++ 2015-2022 x64 재배포 — PaddleOCR DLL 런타임 의존성.
+; 미설치 PC 에서 paddleocr import 실패 → 발송 무한대기로 직결됨. 항상 동봉.
+Source: "redist\VC_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -60,9 +63,26 @@ Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
+; VC++ 재배포 — 미설치 시에만 silent 설치. 이미 같거나 최신이면 redist 자체가 즉시 종료.
+Filename: "{tmp}\VC_redist.x64.exe"; Parameters: "/install /quiet /norestart"; StatusMsg: "Microsoft Visual C++ 런타임 설치 중..."; Check: VCRedistNeedsInstall
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
+function VCRedistNeedsInstall: Boolean;
+var
+  Installed: Cardinal;
+begin
+  // VC++ 2015-2022 x64 런타임이 정상 설치되면
+  //   HKLM\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64\Installed = 1
+  // 키 자체가 없거나 0 이면 설치 필요.
+  if RegQueryDWordValue(HKLM64,
+       'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64',
+       'Installed', Installed) then
+    Result := (Installed = 0)
+  else
+    Result := True;
+end;
+
 function IsAsciiPath(const Path: string): Boolean;
 var
   i: Integer;
