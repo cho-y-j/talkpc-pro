@@ -1,8 +1,9 @@
 name: Build & Release TalkPC Pro
 
 on:
-  push:
-    tags: ["v*"]
+  # 태그 자동 트리거 제거 (2026-06-05) — 로컬 검증 빌드를 CI 산출물이
+  # 덮어쓰는 사고 방지. 빌드 정책 = 로컬 빌드 + 수동 업로드 (CLAUDE.md).
+  # 필요 시 Actions 탭에서 수동 실행만 허용.
   workflow_dispatch:
 
 permissions:
