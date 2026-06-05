@@ -1,9 +1,9 @@
-; TalkPC Pro Installer (Inno Setup 6.x)
-; 빌드: ISCC TalkPC-Pro.iss → output/TalkPC-Pro-Setup-v{version}.exe
+﻿; TalkPC Pro Installer (Inno Setup 6.x)
+; 鍮뚮뱶: ISCC TalkPC-Pro.iss ??output/TalkPC-Pro-Setup-v{version}.exe
 
 #define MyAppName "TalkPC Pro"
 #define MyAppNameKey "TalkPC-Pro"
-#define MyAppVersion "0.1.10"
+#define MyAppVersion "0.1.11"
 #define MyAppPublisher "TalkPC Pro"
 #define MyAppURL "https://talkpc-pro-yf6w.vercel.app"
 #define MyAppExeName "TalkPC-Pro.exe"
@@ -18,30 +18,29 @@ AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}/download
 
-; ASCII-safe 경로 강제 (paddle_inference 한글 경로 불가)
+; ASCII-safe 寃쎈줈 媛뺤젣 (paddle_inference ?쒓? 寃쎈줈 遺덇?)
 DefaultDirName={autopf}\{#MyAppNameKey}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 DisableDirPage=no
-; 한글 사용자가 설치 경로 변경 시도 시 한글 경로 차단
+; ?쒓? ?ъ슜?먭? ?ㅼ튂 寃쎈줈 蹂寃??쒕룄 ???쒓? 寃쎈줈 李⑤떒
 UsePreviousAppDir=yes
 
-; 출력
+; 異쒕젰
 OutputDir=output
-; 버전 미포함 고정 파일명 — landing 의 직접 다운로드 링크용
-; (/releases/latest/download/TalkPC-Pro-Setup.exe 가 항상 최신 가리킴)
+; 踰꾩쟾 誘명룷??怨좎젙 ?뚯씪紐???landing ??吏곸젒 ?ㅼ슫濡쒕뱶 留곹겕??; (/releases/latest/download/TalkPC-Pro-Setup.exe 媛 ??긽 理쒖떊 媛由ы궡)
 OutputBaseFilename=TalkPC-Pro-Setup
 SetupIconFile=
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 
-; 권한 — Program Files 설치라 admin 필요
+; 沅뚰븳 ??Program Files ?ㅼ튂??admin ?꾩슂
 PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64compatible
 ArchitecturesAllowed=x64compatible
 
-; 언어
+; ?몄뼱
 ShowLanguageDialog=no
 
 [Languages]
@@ -53,8 +52,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "{#SourceDir}\TalkPC-Pro.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
-; Microsoft Visual C++ 2015-2022 x64 재배포 — PaddleOCR DLL 런타임 의존성.
-; 미설치 PC 에서 paddleocr import 실패 → 발송 무한대기로 직결됨. 항상 동봉.
+; Microsoft Visual C++ 2015-2022 x64 ?щ같????PaddleOCR DLL ?고????섏〈??
+; 誘몄꽕移?PC ?먯꽌 paddleocr import ?ㅽ뙣 ??諛쒖넚 臾댄븳?湲곕줈 吏곴껐?? ??긽 ?숇큺.
 Source: "redist\VC_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
 [Icons]
@@ -63,8 +62,8 @@ Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-; VC++ 재배포 — 미설치 시에만 silent 설치. 이미 같거나 최신이면 redist 자체가 즉시 종료.
-Filename: "{tmp}\VC_redist.x64.exe"; Parameters: "/install /quiet /norestart"; StatusMsg: "Microsoft Visual C++ 런타임 설치 중..."; Check: VCRedistNeedsInstall
+; VC++ ?щ같????誘몄꽕移??쒖뿉留?silent ?ㅼ튂. ?대? 媛숆굅??理쒖떊?대㈃ redist ?먯껜媛 利됱떆 醫낅즺.
+Filename: "{tmp}\VC_redist.x64.exe"; Parameters: "/install /quiet /norestart"; StatusMsg: "Microsoft Visual C++ ?고????ㅼ튂 以?.."; Check: VCRedistNeedsInstall
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
@@ -72,9 +71,9 @@ function VCRedistNeedsInstall: Boolean;
 var
   Installed: Cardinal;
 begin
-  // VC++ 2015-2022 x64 런타임이 정상 설치되면
+  // VC++ 2015-2022 x64 ?고??꾩씠 ?뺤긽 ?ㅼ튂?섎㈃
   //   HKLM\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64\Installed = 1
-  // 키 자체가 없거나 0 이면 설치 필요.
+  // ???먯껜媛 ?녾굅??0 ?대㈃ ?ㅼ튂 ?꾩슂.
   if RegQueryDWordValue(HKLM64,
        'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64',
        'Installed', Installed) then
@@ -106,12 +105,13 @@ begin
     if not IsAsciiPath(WizardForm.DirEdit.Text) then
     begin
       MsgBox(
-        '설치 경로에 한글이 포함되면 OCR 엔진이 작동하지 않습니다.' + #13#10 +
-        '영문 경로로 변경해주세요.' + #13#10 + #13#10 +
-        '권장 경로: C:\Program Files\TalkPC-Pro\',
+        '?ㅼ튂 寃쎈줈???쒓????ы븿?섎㈃ OCR ?붿쭊???묐룞?섏? ?딆뒿?덈떎.' + #13#10 +
+        '?곷Ц 寃쎈줈濡?蹂寃쏀빐二쇱꽭??' + #13#10 + #13#10 +
+        '沅뚯옣 寃쎈줈: C:\Program Files\TalkPC-Pro\',
         mbError, MB_OK
       );
       Result := False;
     end;
   end;
 end;
+
